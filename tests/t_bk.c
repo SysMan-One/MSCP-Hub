@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BK"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-14"
+#define	__REV__		"1.14.0"
 
 /*
 **++
@@ -27,6 +27,8 @@
 **						not 5: an SD card under load is that slow.
 **		20-OCT-2026	RRL	X01-12 : RMW of both edges, of one edge.
 **		20-OCT-2026	RRL	X01-13 : the sectors an RMW reads, the ones last written.
+**		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
+**						512 sectors written.
 **
 **--
 */
@@ -223,7 +225,8 @@ int			l_fd, l_ok;
 	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
 		"4096: 9 WRITEs into the same sectors at once, none lost");
 	$CHECK((s_d4k.nrmw == 9) && (s_d4k.nlockwait == 8) && !s_d4k.locks && !s_d4k.lwhead, "... 9 RMW, 8 waited for the range, nothing held");
-	$CHECK((s_d4k.nedge == 10) && (s_d4k.nedgelast == 8), "... they read 10 sectors, 8 of them the one the write before had written");
+	$CHECK((s_d4k.nedge == 10) && (s_d4k.nedgehit[0] == 8) && (s_d4k.nedgehit[3] == 8),
+		"... they read 10 sectors, 8 of them among the last 2 and the last 512 written");
 
 	/*
 	**  4096: a READ not on whole sectors; a WRITE on whole sectors goes

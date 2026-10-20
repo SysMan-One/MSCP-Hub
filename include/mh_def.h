@@ -50,6 +50,8 @@
 **						start on a physical sector.
 **		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA and the window 16; the counters of the
 **						sectors an RMW reads.
+**		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
+**						512 sectors written.
 **
 **--
 */
@@ -59,11 +61,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-13"
+#define	__IDENT__	"X01-14"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.13.0"
+#define	__REV__		"1.14.0"
 #endif
 
 #ifndef	__FAC__
@@ -460,6 +462,9 @@ typedef struct mh_bkreq_t {
 /*
 **  The device under a unit: what MHBK keeps of it
 */
+#define	MH$K_BK_LRU		512		/* The model of a cache: sectors at most	*/
+#define	MH$K_BK_LRUN		4		/* ... and its sizes: 2, 16, 128, 512		*/
+
 typedef struct mh_bkdev_t {
 	int		fd;			/* -1 - not open				*/
 	int		type;			/* MH$K_DEV_*					*/
@@ -485,13 +490,14 @@ typedef struct mh_bkdev_t {
 	uint64_t	nrmw, nlockwait, nsync, nsyncw;
 
 	/*
-	**  What a cache of the sectors last written would save: the sectors
-	**  an RMW reads, how many of them are the first or the last sector of
-	**  the write done before (VALID - there is one)
+	**  What a cache of the sectors last written would save - a model, no
+	**  data is kept: the first and the last sector of every write, the
+	**  latest first (LRU); the sectors an RMW reads, how many of them are
+	**  among the latest 2, 16, 128, 512 of the list
 	*/
-	uint64_t	nedge, nedgelast;
-	uint64_t	lastsec [2];
-	int		lastvalid;
+	uint64_t	lru [MH$K_BK_LRU];
+	unsigned	nlru;
+	uint64_t	nedge, nedgehit [MH$K_BK_LRUN];
 } MH$BKDEV;
 
 /*

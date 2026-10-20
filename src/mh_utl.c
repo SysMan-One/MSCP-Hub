@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-14"
+#define	__REV__		"1.14.0"
 
 /*
 **++
@@ -28,6 +28,8 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-12 : MISALIGN.
 **		20-OCT-2026	RRL	X01-13 : BKSTATS: the sectors an RMW reads.
+**		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
+**						512 sectors written.
 **
 **--
 */
@@ -76,7 +78,8 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_BLKSTATS,	"BLKSTATS, block transfers: !UQ chunk!%S sent (!UQ octets), !UQ RET_CNF, !UQ REQ_DAT, !UQ chunk!%S taken (!UQ octets), !UQ dropped"),
 	$MHREC(MH$_MSCPSTATS,	"MSCPSTATS, MSCP server: !UL command!%S in progress, !UQ octets of data buffers in use"),
 	$MHREC(MH$_UNITSTATS,	"UNITSTATS, unit !AZ: ONLINE to !UL host!%S, !UL command!%S running, !UL waiting, !UQ read!%S (!UQ octets), !UQ write!%S (!UQ octets)"),
-	$MHREC(MH$_BKSTATS,	"BKSTATS, unit !AZ: sector !UL, !UQ read-modify-write!%S reading !UQ sector!%S (!UQ the last written), "
+	$MHREC(MH$_BKSTATS,	"BKSTATS, unit !AZ: sector !UL, !UQ read-modify-write!%S reading !UQ sector!%S (in the last 2/16/128/512 written: "
+				"!UQ/!UQ/!UQ/!UQ), "
 				"!UQ wait!%S for a range, !UQ group fdatasync!%S for !UQ write!%S"),
 	$MHREC(MH$_IOSTUCK,	"IOSTUCK, !AZ of unit !AZ, LBN !UL, is in the backend for !UL seconds: cancelled"),
 	$MHREC(MH$_DEVBUSY,	"DEVBUSY, the device !AZ is in use: mounted on this host, or another server has it"),

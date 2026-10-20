@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBK"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-14"
+#define	__REV__		"1.14.0"
 
 /*
 **++
@@ -57,6 +57,8 @@
 **						start on a physical sector.
 **		20-OCT-2026	RRL	X01-13 : BKSTATS: the sectors an RMW reads, the ones the
 **						last write of the disk had.
+**		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
+**						512 sectors written.
 **
 **--
 */
@@ -107,6 +109,8 @@ static	uint8_t	s_zeros [MH$K_BK_ZEROSZ] __attribute__ ((aligned (4096)));
 
 static	int	s_mh$bk_step	(MH$BKREQ *a_req);
 static	int	s_mh$bk_start	(MH$BKREQ *a_req);
+static	int	s_mh$bk_lruhit	(MH$BKDEV *a_dev, uint64_t a_sec);
+static	int	s_mh$bk_lruput	(MH$BKDEV *a_dev, uint64_t a_sec);
 
 
 
@@ -394,9 +398,8 @@ MH$BKDEV	*l_dev = a_req->dev;
 	*/
 	if ( l_dev->ssz > 512 )
 		{
-		l_dev->lastsec[0]	= a_req->off / l_dev->ssz;
-		l_dev->lastsec[1]	= (a_req->off + a_req->len - 1) / l_dev->ssz;
-		l_dev->lastvalid	= 1;
+		s_mh$bk_lruput(l_dev, (a_req->off + a_req->len - 1) / l_dev->ssz);
+		s_mh$bk_lruput(l_dev, a_req->off / l_dev->ssz);
 		}
 
 	s_mh$bk_unlock(a_req);
@@ -491,6 +494,93 @@ uint32_t		l_n;
 		}
 
 	io_uring_submit(&s_bk.ring);
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	The model of a cache of the sectors last written (BKSTATS): a sector
+**	an RMW reads - is it among the latest 2, 16, 128, 512 written?
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device
+**	a_sec		The sector, in sectors of the device
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS.
+**--
+*/
+static	int	s_mh$bk_lruhit	(
+		MH$BKDEV *	a_dev,
+		uint64_t	a_sec
+			)
+{
+static	const unsigned	s_size [MH$K_BK_LRUN] = { 2, 16, 128, MH$K_BK_LRU };
+
+	a_dev->nedge++;
+
+	for ( unsigned i = 0; i < a_dev->nlru; i++ )
+		{
+		if ( a_dev->lru[i] != a_sec )
+			continue;
+
+		for ( unsigned j = 0; j < MH$K_BK_LRUN; j++ )
+			if ( i < s_size[j] )
+				a_dev->nedgehit[j]++;
+
+		break;
+		}
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	A sector has been written: the head of the list of the model, out of
+**	where it was, the last one off when the list is full.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device
+**	a_sec		The sector, in sectors of the device
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS.
+**--
+*/
+static	int	s_mh$bk_lruput	(
+		MH$BKDEV *	a_dev,
+		uint64_t	a_sec
+			)
+{
+unsigned	l_at = a_dev->nlru;
+
+	for ( unsigned i = 0; i < a_dev->nlru; i++ )
+		{
+		if ( a_dev->lru[i] == a_sec )
+			{
+			l_at = i;
+			break;
+			}
+		}
+
+	if ( l_at == MH$K_BK_LRU )
+		l_at--;
+	else if ( l_at == a_dev->nlru )
+		a_dev->nlru++;
+
+	memmove(a_dev->lru + 1, a_dev->lru, l_at * sizeof(a_dev->lru[0]));
+	a_dev->lru[0] = a_sec;
 
 	return	STS$K_SUCCESS;
 }
@@ -675,15 +765,8 @@ int		l_head, l_tail;
 			*/
 			for ( unsigned e = 0; e < 2; e++ )
 				{
-				uint64_t	l_sec = (e ? a_req->off + a_req->len - 1 : a_req->off) / l_dev->ssz;
-
-				if ( !(e ? l_tail : l_head) )
-					continue;
-
-				l_dev->nedge++;
-
-				if ( l_dev->lastvalid && ((l_sec == l_dev->lastsec[0]) || (l_sec == l_dev->lastsec[1])) )
-					l_dev->nedgelast++;
+				if ( e ? l_tail : l_head )
+					s_mh$bk_lruhit(l_dev, (e ? a_req->off + a_req->len - 1 : a_req->off) / l_dev->ssz);
 				}
 
 			if ( l_head || l_tail )
