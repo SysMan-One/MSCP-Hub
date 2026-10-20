@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BK"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-11ECO1"
+#define	__REV__		"1.11.1"
 
 /*
 **++
@@ -23,6 +23,8 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-11ECO1 : the wait for the requests is 30 s,
+**						not 5: an SD card under load is that slow.
 **
 **--
 */
@@ -117,7 +119,8 @@ static	int	s_t$submit	(
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
-**	Wait until N requests in all have been given back, up to 5 s.
+**	Wait until N requests in all have been given back, up to 30 s - a
+**	slow medium (an SD card under load) takes many seconds to sync.
 **--
 */
 static	int	s_t$wait	(
@@ -125,7 +128,7 @@ static	int	s_t$wait	(
 		unsigned	a_n
 			)
 {
-	for ( int i = 0; (i < 500) && (s_given < a_n); i++ )
+	for ( int i = 0; (i < 3000) && (s_given < a_n); i++ )
 		mh$bk_wait(a_port, 10);
 
 	return	s_given >= a_n;

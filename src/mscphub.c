@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-11"
-#define	__REV__		"1.11.0"
+#define	__IDENT__	"X01-11ECO1"
+#define	__REV__		"1.11.1"
 
 /*
 **++
@@ -44,6 +44,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
+**		20-OCT-2026	RRL	X01-11ECO1 : T_BK waits up to 30 s.
 **
 **--
 */
