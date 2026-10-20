@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-11"
+#define	__REV__		"1.11.0"
 
 /*
 **++
@@ -55,6 +55,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **
 **--
 */
@@ -162,9 +163,9 @@ unsigned	l_len, l_mtu;
 	a_port->trace	= a_cfg->trace;
 
 	/*
-	**  /ACK=FLUSH (the default) | HOLD
+	**  /ACK=HOLD (the default) | FLUSH
 	*/
-	a_port->ackmode = MH$K_ACK_FLUSH;
+	a_port->ackmode = MH$K_ACK_HOLD;
 
 	if ( (l_len = $ASCLEN(&a_cfg->ack)) )
 		{

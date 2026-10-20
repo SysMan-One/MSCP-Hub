@@ -13,6 +13,7 @@
 .\"	MODIFICATION HISTORY:
 .\"
 .\"		20-OCT-2026	RRL	X01-10 : Initial public version.
+.\"		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -129,14 +130,14 @@ as
 .BI /CREDITS= n
 How many commands a node may have in progress at once, 2 to 64; default 16.
 .TP
-.BR /ACK= FLUSH | HOLD
+.BR /ACK= HOLD | FLUSH
 When the server acknowledges the packets of a node alone, when it has
 nothing to send.
-.B FLUSH
-(the default): as soon as the frames that came in are taken.
-.BR HOLD :
-only when the node asks, after 4 packets or on the 20 ms tick; otherwise
-the acknowledgement goes with the next packet of the server.  For tests.
+.B HOLD
+(the default): only when the node asks, after 4 packets or on the 20 ms
+tick; otherwise the acknowledgement goes with the next packet of the server.
+.BR FLUSH :
+as soon as the frames that came in are taken.
 .TP
 .BR /TIMEZONE= LOCAL | UTC | \fR[\fB+\fR|\fB\-\fR]\fIhh\fR[\fB:\fImm\fR]
 The zone of the time the server tells the nodes (an OpenVMS node keeps

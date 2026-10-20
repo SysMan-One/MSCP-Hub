@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHHLP"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-11"
+#define	__REV__		"1.11.0"
 
 /*
 **++
@@ -33,6 +33,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **
 **--
 */
@@ -49,7 +50,7 @@ static	const char	s_summary [] =
 	"MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA\n\n"
 	"  mscphub /CONFIG=file | /INTERFACE=if /NODE=name /SYSTEMID=n /GROUP=n /AUTHORIZE=hex16\n"
 	"          [/ALLOCLASS=n] [/UNITn=name,path[,RO][,MEDIA=m][,SECTOR=n]] ...\n"
-	"          [/SYNC=DSYNC|GROUP|NONE] [/CREDITS=n] [/TIMEZONE=LOCAL|UTC|+hh:mm] [/ACK=FLUSH|HOLD]\n"
+	"          [/SYNC=DSYNC|GROUP|NONE] [/CREDITS=n] [/TIMEZONE=LOCAL|UTC|+hh:mm] [/ACK=HOLD|FLUSH]\n"
 	"          [/LISTEN=s] [/PASSIVE] [/TRACE] [/UNSAFE] [/LOGFILE=file] [/HELP[=\"topic ...\"]]\n\n"
 	"  The help library was not found; see the manual page: man 8 mscphub.\n";
 

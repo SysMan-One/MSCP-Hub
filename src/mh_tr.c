@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTR"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-11"
+#define	__REV__		"1.11.0"
 
 /*
 **++
@@ -37,8 +37,8 @@
 **		the last packet of a burst and on a full window - the peer
 **		would otherwise hold its ACK up to 100 ms.  An ACK we owe goes
 **		on the next packet of ours, or alone: at once for RSVP and
-**		duplicates; with /ACK=FLUSH (the default) when the LAN socket
-**		is drained, with /ACK=HOLD when MH$K_TR_ACKBATCH packets are
+**		duplicates; with /ACK=FLUSH when the LAN socket is drained,
+**		with /ACK=HOLD (the default) when MH$K_TR_ACKBATCH packets are
 **		owed or on the next 20 ms tick.  The head that times out (500 ms, then
 **		doubled up to 3 s) is sent again with REXMT and RSVP, the
 **		window drops to 1 and grows by one with every ACK; 30 timeouts
@@ -60,6 +60,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **
 **--
 */

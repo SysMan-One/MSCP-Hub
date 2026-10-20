@@ -202,7 +202,7 @@ going; it is given when the node connects.
 ## /ACK -- when the server acknowledges alone
 
 ```
-/ACK=FLUSH | HOLD     (default FLUSH)
+/ACK=HOLD | FLUSH     (default HOLD)
 ```
 
 Every packet a node sends must be acknowledged. Most of the time the
@@ -217,8 +217,8 @@ sends the acknowledgement alone, in a short packet of its own.
   acknowledgement waits for the answer of the server. Fewer packets
   for the node to take in.
 
-HOLD is a test setting for now: compare the two with the counters of
-SIGUSR1 (ACKSTATS, LATSTATS) before you keep it.
+HOLD sends far fewer packets and is a little faster. FLUSH is the
+old way; the counters of SIGUSR1 (ACKSTATS, LATSTATS) compare the two.
 
 ## /TIMEZONE -- the zone of the time told to the nodes
 

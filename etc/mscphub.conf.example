@@ -1,6 +1,6 @@
 !++
 !  MODULE:		etc/mscphub.conf.example
-!  IDENT:		X01-10
+!  IDENT:		X01-11
 !
 !  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
 !
@@ -53,8 +53,8 @@
 !
 ! /TIMEZONE=LOCAL
 !
-! When the server acknowledges the packets of a node alone: FLUSH (the
-! default, as soon as the frames that came in are taken), HOLD (with its
-! next packet, or after 4 packets or 20 ms) - for tests.
+! When the server acknowledges the packets of a node alone: HOLD (the
+! default, with its next packet, or after 4 packets or 20 ms), FLUSH (as
+! soon as the frames that came in are taken).
 !
-! /ACK=FLUSH
+! /ACK=HOLD
