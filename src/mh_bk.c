@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBK"
-#define	__IDENT__	"X01-12"
-#define	__REV__		"1.12.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -55,6 +55,8 @@
 **						are read at once.
 **		20-OCT-2026	RRL	X01-12 : MISALIGN - a block device that does not
 **						start on a physical sector.
+**		20-OCT-2026	RRL	X01-13 : BKSTATS: the sectors an RMW reads, the ones the
+**						last write of the disk had.
 **
 **--
 */
@@ -386,6 +388,17 @@ static	int	s_mh$bk_written	(
 {
 MH$BKDEV	*l_dev = a_req->dev;
 
+	/*
+	**  The first and the last sector of this write: a cache would hold
+	**  them now (BKSTATS)
+	*/
+	if ( l_dev->ssz > 512 )
+		{
+		l_dev->lastsec[0]	= a_req->off / l_dev->ssz;
+		l_dev->lastsec[1]	= (a_req->off + a_req->len - 1) / l_dev->ssz;
+		l_dev->lastvalid	= 1;
+		}
+
 	s_mh$bk_unlock(a_req);
 
 	switch ( a_req->sync )
@@ -655,6 +668,23 @@ int		l_head, l_tail;
 			*/
 			l_head = (a_req->off & (l_dev->ssz - 1)) != 0;
 			l_tail = ((a_req->off + a_req->len) & (l_dev->ssz - 1)) && !(l_head && (a_req->alen == l_dev->ssz));
+
+			/*
+			**  What a cache of the sectors last written would have
+			**  saved of these reads (BKSTATS)
+			*/
+			for ( unsigned e = 0; e < 2; e++ )
+				{
+				uint64_t	l_sec = (e ? a_req->off + a_req->len - 1 : a_req->off) / l_dev->ssz;
+
+				if ( !(e ? l_tail : l_head) )
+					continue;
+
+				l_dev->nedge++;
+
+				if ( l_dev->lastvalid && ((l_sec == l_dev->lastsec[0]) || (l_sec == l_dev->lastsec[1])) )
+					l_dev->nedgelast++;
+				}
 
 			if ( l_head || l_tail )
 				{

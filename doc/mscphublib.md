@@ -580,7 +580,9 @@ is on disk. Action: do not use it with data you need.
 
 One for each disk, written after its UNITSTATS: the sector of the
 disk, how many writes were done as read-modify-write (a 4096-octet
-sector), how many writes waited for another one on the same sectors,
+sector), how many sectors they read first and how many of those the
+write before had just written (what a cache would save), how many
+writes waited for another one on the same sectors,
 and with /SYNC=GROUP how many flushes covered how many writes. No
 action.
 

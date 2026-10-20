@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMSCP"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -74,6 +74,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-13 : BKSTATS: the sectors an RMW reads.
 **
 **--
 */
@@ -526,8 +527,8 @@ unsigned	l_hosts, l_wait;
 		l_status = $MHMSG(MH$_UNITSTATS, l_unit->dvname, l_hosts, l_unit->current, l_wait,
 			l_unit->nread, l_unit->rbytes, l_unit->nwrite, l_unit->wbytes);
 
-		l_status = $MHMSG(MH$_BKSTATS, l_unit->dvname, l_unit->dev.ssz, l_unit->dev.nrmw, l_unit->dev.nlockwait,
-			l_unit->dev.nsync, l_unit->dev.nsyncw);
+		l_status = $MHMSG(MH$_BKSTATS, l_unit->dvname, l_unit->dev.ssz, l_unit->dev.nrmw, l_unit->dev.nedge, l_unit->dev.nedgelast,
+			l_unit->dev.nlockwait, l_unit->dev.nsync, l_unit->dev.nsyncw);
 
 		for ( unsigned j = 0; j < MH$K_LAT_N; j++ )
 			{

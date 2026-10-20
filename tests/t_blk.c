@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BLK"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -29,6 +29,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-13 : the window opens to 16, RSVP at its half.
 **
 **--
 */
@@ -793,7 +794,9 @@ int		l_fd;
 		}
 
 	$CHECK(l_ok, "READ of 128 KB: 92 chunks, 91 x 1426 + 1306, in order, the data of the image");
-	$CHECK(l_port->tr_maxwin == 8, "the window opened to 8");
+	$CHECK(l_port->tr_maxwin == 16, "the window opened to 16");
+	$CHECK(!(s_tx[6][T$K_TR] & NISCA$M_TR_RSVP) && (s_tx[7][T$K_TR] & NISCA$M_TR_RSVP) && (s_tx[15][T$K_TR] & NISCA$M_TR_RSVP),
+		"... RSVP on the 8th chunk, the half of the window, and on the 16th");
 	memcpy(l_req, s_t$pay(0), sizeof(l_req));
 	s_ntx = 0;
 	s_t$answer(l_port, s_e0_retcnf_a2, sizeof(s_e0_retcnf_a2), l_req);

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-11"
-#define	__REV__		"1.11.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -56,6 +56,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
+**		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA 16.
 **
 **--
 */

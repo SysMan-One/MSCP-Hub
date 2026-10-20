@@ -48,6 +48,8 @@
 **						are read at once.
 **		20-OCT-2026	RRL	X01-12 : MISALIGN - a block device that does not
 **						start on a physical sector.
+**		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA and the window 16; the counters of the
+**						sectors an RMW reads.
 **
 **--
 */
@@ -57,11 +59,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-12"
+#define	__IDENT__	"X01-13"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.12.0"
+#define	__REV__		"1.13.0"
 #endif
 
 #ifndef	__FAC__
@@ -189,12 +191,12 @@ enum	{
 #define	MH$K_DLY_MAX		100
 
 #define	MH$K_LAN_OVHD		72		/* PEDRIVER: data field = DLL size - 72		*/
-#define	MH$K_PIPE_QUOTA		8		/* As the satellite's boot driver		*/
+#define	MH$K_PIPE_QUOTA		16		/* What a node may send us unacknowledged	*/
 
 /*
 **  The transport
 */
-#define	MH$K_TR_WINDOW		8		/* Our transmit window at most			*/
+#define	MH$K_TR_WINDOW		16		/* Our transmit window at most			*/
 #define	MH$K_TR_RCVCACHE	32		/* Receive cache: HSR+2 ... HSR+32		*/
 #define	MH$K_TR_XMTQ		64		/* Messages waiting for the window; the chunks	*/
 						/* of a block transfer are made when it opens	*/
@@ -481,6 +483,15 @@ typedef struct mh_bkdev_t {
 	MH$BKREQ	gsync;
 
 	uint64_t	nrmw, nlockwait, nsync, nsyncw;
+
+	/*
+	**  What a cache of the sectors last written would save: the sectors
+	**  an RMW reads, how many of them are the first or the last sector of
+	**  the write done before (VALID - there is one)
+	*/
+	uint64_t	nedge, nedgelast;
+	uint64_t	lastsec [2];
+	int		lastvalid;
 } MH$BKDEV;
 
 /*

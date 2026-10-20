@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-12"
-#define	__REV__		"1.12.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -46,6 +46,7 @@
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **		20-OCT-2026	RRL	X01-11ECO1 : T_BK waits up to 30 s.
 **		20-OCT-2026	RRL	X01-12 : the edges of an RMW are read at once.
+**		20-OCT-2026	RRL	X01-13 : window 16; BKSTATS counts the sectors an RMW reads.
 **
 **--
 */

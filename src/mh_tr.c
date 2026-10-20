@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTR"
-#define	__IDENT__	"X01-11"
-#define	__REV__		"1.11.0"
+#define	__IDENT__	"X01-13"
+#define	__REV__		"1.13.0"
 
 /*
 **++
@@ -31,10 +31,11 @@
 **		    the cache drained after it, a duplicate is dropped and
 **		    answered by an ACK at once, one up to 32 ahead is cached.
 **
-**		Transmit: at most min(PIPE_QUOTA of the peer, 8) packets are
+**		Transmit: at most min(PIPE_QUOTA of the peer, 16) packets are
 **		out unacknowledged; the rest wait in a queue.  Every packet
 **		carries ACK = HSR; RSVP asks for an ACK at once and is set on
-**		the last packet of a burst and on a full window - the peer
+**		the last packet of a burst, on a full window and, on a window
+**		of 8 or more, on its half, as PEDRIVER does - the peer
 **		would otherwise hold its ACK up to 100 ms.  An ACK we owe goes
 **		on the next packet of ours, or alone: at once for RSVP and
 **		duplicates; with /ACK=FLUSH when the LAN socket is drained,
@@ -61,6 +62,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
+**		20-OCT-2026	RRL	X01-13 : 16 packets in flight, RSVP at half the window.
 **
 **--
 */
@@ -309,9 +311,11 @@ unsigned	l_len;
 		l_flags = NISCA$M_TR_DATA | NISCA$M_TR_SEQ | NISCA$M_TR_ACK;
 
 		/*
-		**  RSVP on the last of a burst and on a full window
+		**  RSVP on the last of a burst, on a full window and on the half of
+		**  a wide one: the ACK of the first half comes back while the
+		**  second is out
 		*/
-		if ( (!l_vc->nq && !l_vc->blkhead) || (l_vc->nxmt == l_vc->window) )
+		if ( (!l_vc->nq && !l_vc->blkhead) || (l_vc->nxmt == l_vc->window) || ((l_vc->window >= 8) && (l_vc->nxmt == l_vc->window / 2)) )
 			l_flags |= NISCA$M_TR_RSVP;
 
 		if ( l_vc->nxmt == 1 )
