@@ -14,6 +14,7 @@
 .\"
 .\"		20-OCT-2026	RRL	X01-10 : Initial public version.
 .\"		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
+.\"		20-OCT-2026	RRL	X01-12 : 4K disks: the cluster, MISALIGN.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -106,7 +107,9 @@ is DK, a controller letter and a unit number: DKA100.  The
 is a file \- its size is the size of the disk \- or a block device, opened
 with O_DIRECT and O_EXCL: a device in use on the host is refused (DEVBUSY).
 A device of 4096\-octet sectors is served; a write that does not fill whole
-sectors is done as read\-modify\-write.
+sectors is done as read\-modify\-write.  Initialize such a disk on OpenVMS
+with a cluster of 8 or a multiple of 8 (INITIALIZE/CLUSTER=16); a partition
+that does not start on a physical sector is warned of (MISALIGN).
 .B RO
 serves it read only;
 .B MEDIA=

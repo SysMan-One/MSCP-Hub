@@ -115,6 +115,10 @@ A block device - a whole disk, a partition, an LVM volume, a loop device,
 an iSCSI LUN - must not be mounted or used by Linux. The server takes it
 for itself and refuses one that is in use (`DEVBUSY`).
 
+A disk of 4096-octet sectors works too. A partition on it must start on
+a physical sector, or every write is slow (the server says `MISALIGN`);
+`parted` and `fdisk` start partitions on 1 MB by default.
+
 The CD of OpenVMS (an ISO file) is served read only, as an RRD42:
 
 ```
@@ -185,6 +189,11 @@ $ MOUNT/SYSTEM $42$DKA100: DATA1
 $ COPY *.* $42$DKA100:[000000]
 ```
 
+On a Linux disk of 4096-octet sectors, give the cluster yourself, 8 or a
+multiple of 8: `INITIALIZE/CLUSTER=16 $42$DKA100: DATA1`. Then the files
+fill whole sectors and are written without reading first. OpenVMS takes
+16 by itself on a disk of more than 50000 blocks, 1 on a smaller one.
+
 Two or more computers of the cluster can use one disk together:
 `MOUNT/CLUSTER $42$DKA100: DATA1`.
 
@@ -228,6 +237,7 @@ Read the last messages of the journal. Every message has a severity letter:
 | `F-SYSERR, ioctl(SIOCGIFINDEX), errno=19` | the name of `/INTERFACE` |
 | `F-IDCLASH`, `F-NAMECLASH` | choose another `/SYSTEMID` or `/NODE` |
 | `F-DEVBUSY` | the device is mounted or used on Linux |
+| `W-MISALIGN` | the partition does not start on a physical sector: make a new one on 1 MB |
 | `%UTILS-E: ... Skip unrecognized option` | a misspelled parameter: it is NOT used, the server runs without it |
 | no `NEWNODE` | the cable, the VLAN or bridge, `/GROUP`; `tcpdump -i eth1 ether proto 0x6007` |
 | `W-AUTHFAIL` | `/AUTHORIZE` is not the hash of the cluster password |

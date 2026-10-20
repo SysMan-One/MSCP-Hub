@@ -145,6 +145,17 @@ A to Z and a number 0 to 9999, for example DKA100. The path is:
   that is mounted on the Linux host, or that another server has, is
   refused (DEVBUSY). A device of 4096-octet sectors works: a write
   that does not fill whole sectors is done as read-modify-write.
+  A partition that does not start on a physical sector is warned of
+  (MISALIGN).
+
+  OpenVMS writes in blocks of 512 octets and knows nothing of 4096-octet
+  sectors. To have most of its writes fill whole sectors, INITIALIZE
+  the disk with a cluster of 8 or a multiple of 8:
+  INITIALIZE/CLUSTER=16 $42$DKA100: DATA1. OpenVMS does so by itself on
+  a disk of more than 50000 blocks; on a smaller one it takes 1. The
+  writes of one block (file headers, the bitmap, directories) stay
+  read-modify-write - as they would in a 4096-octet disk of 512
+  emulation.
 
 Options, in any order:
 
@@ -599,6 +610,16 @@ The server cannot open a block device of /UNITn for itself: it is
 mounted on the Linux host, it is in use by LVM or RAID, or another
 server has it. The server stops. Action: unmount it, or give another
 device. Never serve a device the Linux host uses.
+
+### MISALIGN
+
+A block device of /UNITn - most often a partition - does not start
+on a physical sector of the Linux disk: it starts that many octets
+into one. Then no write of a node fills whole sectors, and every one
+is a read-modify-write, in the server or in the disk itself. The
+server still serves the device. Action: for a new disk, make the
+partition start on a multiple of 1 MB (parted, fdisk do so by
+default) and copy the data over.
 
 ### UPTIME
 

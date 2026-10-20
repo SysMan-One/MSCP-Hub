@@ -53,6 +53,8 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-12 : the first and the last sector of an RMW
 **						are read at once.
+**		20-OCT-2026	RRL	X01-12 : MISALIGN - a block device that does not
+**						start on a physical sector.
 **
 **--
 */
@@ -896,7 +898,8 @@ int	mh$bk_open	(
 			)
 {
 struct stat	l_st;
-int		l_ssz = 512;
+int		l_ssz = 512, l_aoff = 0;
+unsigned	l_pssz = 0;
 char		l_what [256 + 64];
 
 	memset(a_dev, 0, sizeof(*a_dev));
@@ -923,6 +926,15 @@ char		l_what [256 + 64];
 			return	s_mh$bk_syserr(l_what, sizeof(l_what), "ioctl(BLKGETSIZE64, BLKSSZGET)", a_path);
 
 		a_dev->ssz = (uint32_t) l_ssz;
+
+		/*
+		**  A partition or a volume that does not start on a physical
+		**  sector (BLKALIGNOFF: -1 - it cannot be aligned at all) makes
+		**  every write a read-modify-write, here or in the disk itself,
+		**  even on a volume of the node with a cluster of 8 or 16
+		*/
+		if ( !ioctl(a_dev->fd, BLKPBSZGET, &l_pssz) && !ioctl(a_dev->fd, BLKALIGNOFF, &l_aoff) && l_aoff )
+			$MHMSG(MH$_MISALIGN, a_path, l_aoff, l_pssz);
 		}
 	else	{
 		a_dev->type = MH$K_DEV_FILE;

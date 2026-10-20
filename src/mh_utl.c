@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-12"
+#define	__REV__		"1.12.0"
 
 /*
 **++
@@ -26,6 +26,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-12 : MISALIGN.
 **
 **--
 */
@@ -82,6 +83,7 @@ static	EMSG_RECORD	s_msgtab [] = {
 				"!UQ asked, !UQ for a duplicate, !UQ for !UL packets, !UQ when drained, !UQ on the tick"),
 	$MHREC(MH$_LATSTATS,	"LATSTATS, unit !AZ, !AZ: !UQ command!%S, average !UQ us (backend !UQ, transfers !UQ, the rest !UQ), longest !UQ us; "
 				"under 0.1/0.3/1/3/10 ms and longer: !UQ/!UQ/!UQ/!UQ/!UQ/!UQ"),
+	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),
 	$MHREC(MH$_UPTIME,	"UPTIME, MSCPHUB !AZ, node !AZ, up !UL day!%S !2ZL:!2ZL:!2ZL, OpenVMS time of !AZ"),
 	$MHREC(MH$_UNSAFE,	"UNSAFE, /SYNC=NONE: a WRITE is answered before its data is on disk - for tests only"),
 	$MHREC(MH$_AUTHFAIL,	"AUTHFAIL, node !AZ (!UL, !AZ) sent a CC message with a wrong cluster password, ignored"),

@@ -46,6 +46,8 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-12 : the first and the last sector of an RMW
 **						are read at once.
+**		20-OCT-2026	RRL	X01-12 : MISALIGN - a block device that does not
+**						start on a physical sector.
 **
 **--
 */
@@ -123,6 +125,7 @@ enum	{
 	MH$K_MSG_UPTIME,			/* How long the server has run, on SIGUSR1	*/
 	MH$K_MSG_ACKSTATS,			/* The ACKs sent, by why they went, on SIGUSR1	*/
 	MH$K_MSG_LATSTATS,			/* The time of the commands of a unit, on SIGUSR1	*/
+	MH$K_MSG_MISALIGN,			/* A block device starts inside a physical sector	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -164,6 +167,7 @@ enum	{
 #define	MH$_UPTIME		$MHSTS(MH$K_MSG_UPTIME,		STS$K_INFO)
 #define	MH$_ACKSTATS		$MHSTS(MH$K_MSG_ACKSTATS,	STS$K_INFO)
 #define	MH$_LATSTATS		$MHSTS(MH$K_MSG_LATSTATS,	STS$K_INFO)
+#define	MH$_MISALIGN		$MHSTS(MH$K_MSG_MISALIGN,	STS$K_WARN)
 
 /*
 **  Sizes, limits and the timing of the protocol
