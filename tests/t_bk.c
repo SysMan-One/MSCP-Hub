@@ -29,6 +29,8 @@
 **		20-OCT-2026	RRL	X01-13 : the sectors an RMW reads, the ones last written.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
+**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**						reads only the edges it does not find there.
 **
 **--
 */
@@ -227,6 +229,7 @@ int			l_fd, l_ok;
 	$CHECK((s_d4k.nrmw == 9) && (s_d4k.nlockwait == 8) && !s_d4k.locks && !s_d4k.lwhead, "... 9 RMW, 8 waited for the range, nothing held");
 	$CHECK((s_d4k.nedge == 10) && (s_d4k.nedgehit[0] == 8) && (s_d4k.nedgehit[3] == 8),
 		"... they read 10 sectors, 8 of them among the last 2 and the last 512 written");
+	$CHECK(s_d4k.ncache == 8, "... 8 of the 10 sectors came out of the cache, not the disk");
 
 	/*
 	**  4096: a READ not on whole sectors; a WRITE on whole sectors goes
@@ -265,6 +268,39 @@ int			l_fd, l_ok;
 	s_t$submit(&s_req[6], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 73728, 1024, l_buf[6]);
 	$CHECK(s_t$wait(&s_port, 3) && !s_req[4].err && !s_req[5].err && !s_req[6].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0))
 		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 13), "4096: RMW of both edges at once, of the first, of the last");
+
+	/*
+	**  4096, the cache: a write of a whole sector puts its new data there,
+	**  an RMW over it after takes that; an ERASE by fallocate drops a
+	**  sector, an RMW over it after reads the zeros from the disk
+	*/
+	s_given = 0;
+	memset(l_buf[0], 0x41, 4096);
+	memcpy(s_want + 81920, l_buf[0], 4096);
+	s_t$submit(&s_req[0], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 81920, 4096, l_buf[0]);
+	l_ok = s_t$wait(&s_port, 1) && !s_req[0].err;
+	l_size = s_d4k.ncache;
+	memset(l_buf[1], 0x42, 512);
+	memcpy(s_want + 81920 + 1024, l_buf[1], 512);
+	s_t$submit(&s_req[1], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 81920 + 1024, 512, l_buf[1]);
+	l_ok = l_ok && s_t$wait(&s_port, 2) && !s_req[1].err && (s_d4k.ncache == l_size + 1);
+	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
+		"4096 cache: a whole sector written, an RMW over it takes it from the cache, the data is right");
+
+	memset(l_buf[2], 0x43, 512);
+	memcpy(s_want + 90112 + 512, l_buf[2], 512);
+	s_t$submit(&s_req[2], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 90112 + 512, 512, l_buf[2]);
+	l_ok = s_t$wait(&s_port, 3) && !s_req[2].err;
+	memset(s_want + 90112, 0, 8192);
+	s_t$submit(&s_req[3], &s_d4k, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 90112, 8192, NULL);
+	l_ok = l_ok && s_t$wait(&s_port, 4) && !s_req[3].err;
+	l_size = s_d4k.ncache;
+	memset(l_buf[4], 0x44, 512);
+	memcpy(s_want + 90112 + 1024, l_buf[4], 512);
+	s_t$submit(&s_req[4], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 90112 + 1024, 512, l_buf[4]);
+	l_ok = l_ok && s_t$wait(&s_port, 5) && !s_req[4].err && (s_d4k.ncache == l_size);
+	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
+		"4096 cache: an ERASE drops a sector, an RMW over it after reads the disk, no stale data");
 	close(l_fd);
 
 	/*

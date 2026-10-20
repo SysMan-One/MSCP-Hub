@@ -59,6 +59,8 @@
 **						last write of the disk had.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
+**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**						reads only the edges it does not find there.
 **
 **--
 */
@@ -110,6 +112,9 @@ static	uint8_t	s_zeros [MH$K_BK_ZEROSZ] __attribute__ ((aligned (4096)));
 static	int	s_mh$bk_step	(MH$BKREQ *a_req);
 static	int	s_mh$bk_start	(MH$BKREQ *a_req);
 static	int	s_mh$bk_lruhit	(MH$BKDEV *a_dev, uint64_t a_sec);
+static	int	s_mh$bk_cget	(MH$BKDEV *a_dev, uint64_t a_sec, uint8_t *a_dst);
+static	int	s_mh$bk_cput	(MH$BKDEV *a_dev, uint64_t a_sec, const uint8_t *a_src);
+static	int	s_mh$bk_cdrop	(MH$BKDEV *a_dev, uint64_t a_off, uint64_t a_len);
 static	int	s_mh$bk_lruput	(MH$BKDEV *a_dev, uint64_t a_sec);
 
 
@@ -157,6 +162,12 @@ static	int	s_mh$bk_finish	(
 			break;
 			}
 		}
+
+	/*
+	**  A write that failed: what is on disk under it is not known
+	*/
+	if ( a_req->err && (a_req->op != MH$K_BK_READ) && (a_req->op != MH$K_BK_SYNC) && (a_req->dev->ssz > 512) )
+		s_mh$bk_cdrop(a_req->dev, a_req->aoff, a_req->alen);
 
 	s_mh$bk_unlock(a_req);
 
@@ -400,6 +411,29 @@ MH$BKDEV	*l_dev = a_req->dev;
 		{
 		s_mh$bk_lruput(l_dev, (a_req->off + a_req->len - 1) / l_dev->ssz);
 		s_mh$bk_lruput(l_dev, a_req->off / l_dev->ssz);
+
+		/*
+		**  The cache: what the write covers is dropped, its first and
+		**  last whole sectors go in - out of the bounce buffer of an RMW,
+		**  or out of the data of a write on whole sectors.  Before the
+		**  range is given up, so no RMW of these sectors runs meanwhile
+		*/
+		s_mh$bk_cdrop(l_dev, a_req->aoff, a_req->alen);
+
+		if ( a_req->bounce )
+			{
+			if ( a_req->alen > l_dev->ssz )
+				s_mh$bk_cput(l_dev, (a_req->aoff + a_req->alen) / l_dev->ssz - 1, a_req->bounce + a_req->alen - l_dev->ssz);
+
+			s_mh$bk_cput(l_dev, a_req->aoff / l_dev->ssz, a_req->bounce);
+			}
+		else if ( a_req->op == MH$K_BK_WRITE )
+			{
+			if ( a_req->len > l_dev->ssz )
+				s_mh$bk_cput(l_dev, (a_req->off + a_req->len) / l_dev->ssz - 1, a_req->buf + a_req->len - l_dev->ssz);
+
+			s_mh$bk_cput(l_dev, a_req->off / l_dev->ssz, a_req->buf);
+			}
 		}
 
 	s_mh$bk_unlock(a_req);
@@ -494,6 +528,134 @@ uint32_t		l_n;
 		}
 
 	io_uring_submit(&s_bk.ring);
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Take a sector out of the cache of the sectors last written.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device
+**	a_sec		The sector, in sectors of the device
+**	a_dst		Where its data goes, a sector long
+**
+**  RETURN VALUE:
+**	1 - it was there, copied; 0 - not.
+**--
+*/
+static	int	s_mh$bk_cget	(
+		MH$BKDEV *	a_dev,
+		uint64_t	a_sec,
+		uint8_t *	a_dst
+			)
+{
+	if ( !a_dev->cdata )
+		return	0;
+
+	for ( unsigned i = 0; i < MH$K_BK_CACHE; i++ )
+		{
+		if ( !a_dev->cstamp[i] || (a_dev->csec[i] != a_sec) )
+			continue;
+
+		memcpy(a_dst, a_dev->cdata + (size_t) i * a_dev->ssz, a_dev->ssz);
+		a_dev->cstamp[i] = ++a_dev->cclock;
+		a_dev->ncache++;
+
+		return	1;
+		}
+
+	return	0;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Put a sector just written into the cache: in place of itself, of a
+**	free entry or of the oldest one.  Without the memory for the cache
+**	nothing is kept.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device
+**	a_sec		The sector, in sectors of the device
+**	a_src		Its data, as on disk now
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS.
+**--
+*/
+static	int	s_mh$bk_cput	(
+		MH$BKDEV *	a_dev,
+		uint64_t	a_sec,
+	const	uint8_t *	a_src
+			)
+{
+unsigned	l_at = 0;
+
+	if ( !a_dev->cdata && !(a_dev->cdata = aligned_alloc(4096, (size_t) MH$K_BK_CACHE * a_dev->ssz)) )
+		return	STS$K_SUCCESS;
+
+	for ( unsigned i = 0; i < MH$K_BK_CACHE; i++ )
+		{
+		if ( a_dev->cstamp[i] && (a_dev->csec[i] == a_sec) )
+			{
+			l_at = i;
+			break;
+			}
+
+		if ( a_dev->cstamp[i] < a_dev->cstamp[l_at] )
+			l_at = i;
+		}
+
+	memcpy(a_dev->cdata + (size_t) l_at * a_dev->ssz, a_src, a_dev->ssz);
+	a_dev->csec[l_at]	= a_sec;
+	a_dev->cstamp[l_at]	= ++a_dev->cclock;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Drop from the cache every sector a range of octets touches.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device
+**	a_off		The start of the range, octets
+**	a_len		Its length, octets
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS.
+**--
+*/
+static	int	s_mh$bk_cdrop	(
+		MH$BKDEV *	a_dev,
+		uint64_t	a_off,
+		uint64_t	a_len
+			)
+{
+uint64_t	l_first = a_off / a_dev->ssz, l_last = (a_off + a_len - 1) / a_dev->ssz;
+
+	if ( !a_len )
+		return	STS$K_SUCCESS;
+
+	for ( unsigned i = 0; i < MH$K_BK_CACHE; i++ )
+		if ( a_dev->cstamp[i] && (a_dev->csec[i] >= l_first) && (a_dev->csec[i] <= l_last) )
+			a_dev->cstamp[i] = 0;
 
 	return	STS$K_SUCCESS;
 }
@@ -768,6 +930,15 @@ int		l_head, l_tail;
 				if ( e ? l_tail : l_head )
 					s_mh$bk_lruhit(l_dev, (e ? a_req->off + a_req->len - 1 : a_req->off) / l_dev->ssz);
 				}
+
+			/*
+			**  The edges the cache has are not read
+			*/
+			if ( l_head && s_mh$bk_cget(l_dev, a_req->aoff / l_dev->ssz, a_req->bounce) )
+				l_head = 0;
+
+			if ( l_tail && s_mh$bk_cget(l_dev, (a_req->aoff + a_req->alen) / l_dev->ssz - 1, a_req->bounce + a_req->alen - l_dev->ssz) )
+				l_tail = 0;
 
 			if ( l_head || l_tail )
 				{

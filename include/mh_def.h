@@ -52,6 +52,8 @@
 **						sectors an RMW reads.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
+**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**						reads only the edges it does not find there.
 **
 **--
 */
@@ -464,6 +466,7 @@ typedef struct mh_bkreq_t {
 */
 #define	MH$K_BK_LRU		512		/* The model of a cache: sectors at most	*/
 #define	MH$K_BK_LRUN		4		/* ... and its sizes: 2, 16, 128, 512		*/
+#define	MH$K_BK_CACHE		16		/* Sectors last written, kept for the RMW	*/
 
 typedef struct mh_bkdev_t {
 	int		fd;			/* -1 - not open				*/
@@ -498,6 +501,19 @@ typedef struct mh_bkdev_t {
 	uint64_t	lru [MH$K_BK_LRU];
 	unsigned	nlru;
 	uint64_t	nedge, nedgehit [MH$K_BK_LRUN];
+
+	/*
+	**  The cache of the first and the last sectors of the writes of a
+	**  disk of sectors over 512 octets, the data in CDATA (allocated at
+	**  the first write): what an RMW finds here it does not read.  The
+	**  writes of a sector are in order (the ranges), so an entry is what
+	**  the disk has; a write drops what it covers, a failed one too
+	*/
+	uint64_t	csec [MH$K_BK_CACHE];
+	uint64_t	cstamp [MH$K_BK_CACHE];	/* 0 - free; the least is the oldest		*/
+	uint64_t	cclock;
+	uint8_t *	cdata;
+	uint64_t	ncache;			/* Sectors an RMW took from it			*/
 } MH$BKDEV;
 
 /*

@@ -77,6 +77,8 @@
 **		20-OCT-2026	RRL	X01-13 : BKSTATS: the sectors an RMW reads.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
+**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**						reads only the edges it does not find there.
 **
 **--
 */
@@ -529,7 +531,7 @@ unsigned	l_hosts, l_wait;
 		l_status = $MHMSG(MH$_UNITSTATS, l_unit->dvname, l_hosts, l_unit->current, l_wait,
 			l_unit->nread, l_unit->rbytes, l_unit->nwrite, l_unit->wbytes);
 
-		l_status = $MHMSG(MH$_BKSTATS, l_unit->dvname, l_unit->dev.ssz, l_unit->dev.nrmw, l_unit->dev.nedge, l_unit->dev.nedgehit[0],
+		l_status = $MHMSG(MH$_BKSTATS, l_unit->dvname, l_unit->dev.ssz, l_unit->dev.nrmw, l_unit->dev.nedge, l_unit->dev.ncache, l_unit->dev.nedgehit[0],
 			l_unit->dev.nedgehit[1], l_unit->dev.nedgehit[2], l_unit->dev.nedgehit[3], l_unit->dev.nlockwait, l_unit->dev.nsync,
 			l_unit->dev.nsyncw);
 
