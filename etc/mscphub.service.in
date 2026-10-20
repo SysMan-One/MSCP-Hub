@@ -1,0 +1,72 @@
+#++
+#  MODULE:		etc/mscphub.service.in
+#  IDENT:		X01-10
+#  REV:			1.10.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the systemd unit of the server.  CMake fills in the paths at
+#			configuration time and installs the result; the file is not to be edited in
+#			place, since the next installation would overwrite it.  To alter how the server
+#			is started - the CPU it runs on, another configuration file - use a drop-in:
+#
+#			  systemctl edit mscphub
+#
+#			The unit is installed and NOT enabled: a server that starts on its own begins
+#			to talk to the VMScluster on its LAN, and that is for the administrator to
+#			decide.  Without the configuration file the unit does not start at all.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	18-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		20-OCT-2026	RRL	X01-10 : Initial public version.
+#
+#--
+#
+
+[Unit]
+Description=MSCPHUB - MSCP disk server for OpenVMS nodes
+Documentation=man:mscphub(8) file:@MH_FULL_DOCDIR@/mscphub_guide.md
+ConditionPathExists=@MH_CONFFILE@
+#
+#  The interface must be there and up; the server reads its address and MTU at start-up only.
+#  A bridge or a VLAN made by systemd-networkd or ifupdown is ready at network-online.target.
+#
+Wants=network-online.target
+After=network-online.target local-fs.target
+
+[Service]
+#
+#  In the foreground, the messages to the standard error: they reach the journal of the system
+#  (journalctl -u mscphub).  /LOGFILE in the configuration file sends them to a file instead.
+#
+Type=simple
+ExecStart=@MH_FULL_SBINDIR@/mscphub /CONFIG=@MH_CONFFILE@
+
+#
+#  SIGTERM: the server says BYE to every node, so they close the virtual circuit at once rather
+#  than after the listen timer.  SIGUSR1 logs what it is doing:
+#
+#	systemctl kill -s USR1 mscphub
+#
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+Restart=on-failure
+RestartSec=5
+
+#
+#  The server needs a raw socket (CAP_NET_RAW) and access to its images and devices; nothing
+#  else of root.  Memory locked for the io_uring - kernels before 5.12 count it against
+#  RLIMIT_MEMLOCK.
+#
+CapabilityBoundingSet=CAP_NET_RAW CAP_DAC_OVERRIDE
+NoNewPrivileges=yes
+LimitMEMLOCK=64M
+
+[Install]
+WantedBy=multi-user.target

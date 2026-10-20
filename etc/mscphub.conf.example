@@ -1,0 +1,60 @@
+!++
+!  MODULE:		etc/mscphub.conf.example
+!  IDENT:		X01-10
+!
+!  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+!
+!  ABSTRACT:		A sample configuration file of the server.  Copy it to mscphub.conf
+!			next to it, change it, then start the server:
+!
+!			  systemctl start mscphub
+!
+!			One parameter per line, as on the command line.  A line that starts
+!			with "!" is a comment.  "mscphub /HELP" describes every parameter.
+!
+!  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+!
+!  CREATION DATE:	18-OCT-2026
+!--
+!
+! The LAN interface the OpenVMS nodes are on.  The same LAN segment - a
+! bridge, a VLAN, a switch - as their NISCA (PEDRIVER) adapters.
+!
+/INTERFACE=eth0
+!
+! Who the server is in the cluster: SCSNODE and SCSSYSTEMID of its own,
+! used by no other node.
+!
+/NODE=MHUB
+/SYSTEMID=65200
+!
+! The cluster: its group number and its password, as CLUSTER_CONFIG
+! made them.  The password is the hash of CLUSTER_AUTHORIZE.DAT, see
+! "mscphub /HELP AUTHORIZE" for how to read it on an OpenVMS node.
+!
+/GROUP=4242
+/AUTHORIZE=0000000000000000
+!
+! The disks.  OpenVMS names them $<allocation class>$<name>: here
+! $42$DKA100 and $42$DKA300.
+!
+/ALLOCLASS=42
+/UNIT0=DKA100,/srv/mscphub/dka100.img
+! /UNIT1=DKA200,/dev/sdb
+! /UNIT2=DKA300,/srv/mscphub/AXPVMS083.iso,RO
+!
+! When a WRITE is on the disk: DSYNC (the default, every WRITE), GROUP
+! (one fdatasync for the writes that come together).
+!
+! /SYNC=GROUP
+!
+! The zone of the time the server tells the nodes: LOCAL (the default, the
+! zone of this host), UTC, or an offset such as +03:00.
+!
+! /TIMEZONE=LOCAL
+!
+! When the server acknowledges the packets of a node alone: FLUSH (the
+! default, as soon as the frames that came in are taken), HOLD (with its
+! next packet, or after 4 packets or 20 ms) - for tests.
+!
+! /ACK=FLUSH

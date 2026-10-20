@@ -1,0 +1,276 @@
+#define	__MODULE__	"T_BK"
+#define	__IDENT__	"X01-10"
+#define	__REV__		"1.10.0"
+
+/*
+**++
+**
+**  FACILITY:	MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+**
+**  MODULE:	t_bk.c
+**
+**  ABSTRACT:	Unit tests of the backend (MHBK) by itself: io_uring, the
+**		read-modify-write of a disk of 4096-octet sectors and its
+**		ranges of sectors, ERASE, group commit, a read past the end of
+**		a file.  A file taken as a disk of 4096-octet sectors (SECTOR=
+**		of a unit) stands for a 4K block device: the same steps, with
+**		the page cache under them instead of O_DIRECT.
+**
+**  AUTHOR:	StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+**
+**  CREATION DATE:  18-OCT-2026
+**
+**  MODIFICATION HISTORY:
+**
+**		20-OCT-2026	RRL	X01-10 : Initial public version.
+**
+**--
+*/
+
+#include	<stdio.h>
+#include	<stdlib.h>
+#include	<string.h>
+#include	<fcntl.h>
+#include	<unistd.h>
+
+#include	"mh_def.h"
+
+#define	T$K_IMGSZ	(1024 * 1024)
+#define	T$K_NREQ	32
+
+static	int		s_fails, s_checks;
+static	unsigned	s_given;
+
+#define	$CHECK(cond, what)	s_t$check((cond), (what), __LINE__)
+
+
+
+static	int	s_t$check	(
+		int		a_ok,
+	const	char *		a_what,
+		int		a_line
+			)
+{
+	s_checks++;
+
+	if ( a_ok )
+		return	STS$K_SUCCESS;
+
+	s_fails++;
+	fprintf(stderr, "T_BK:%d: FAILED: %s\n", a_line, a_what);
+
+	return	STS$K_ERROR;
+}
+
+
+
+/*
+**  A request is given back: counted
+*/
+static	int	s_t$done	(
+		MH$PORT *	a_port,
+		MH$BKREQ *	a_req
+			)
+{
+	(void) a_port;
+	(void) a_req;
+
+	s_given++;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Hand a request to the backend.
+**--
+*/
+static	int	s_t$submit	(
+		MH$BKREQ *	a_req,
+		MH$BKDEV *	a_dev,
+		int		a_op,
+		int		a_sync,
+		uint64_t	a_off,
+		uint32_t	a_len,
+		uint8_t *	a_buf
+			)
+{
+	memset(a_req, 0, sizeof(*a_req));
+	a_req->op	= a_op;
+	a_req->dev	= a_dev;
+	a_req->sync	= a_sync;
+	a_req->off	= a_off;
+	a_req->len	= a_len;
+	a_req->buf	= a_buf;
+	a_req->cb	= s_t$done;
+
+	return	mh$bk_submit(a_req);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Wait until N requests in all have been given back, up to 5 s.
+**--
+*/
+static	int	s_t$wait	(
+		MH$PORT *	a_port,
+		unsigned	a_n
+			)
+{
+	for ( int i = 0; (i < 500) && (s_given < a_n); i++ )
+		mh$bk_wait(a_port, 10);
+
+	return	s_given >= a_n;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	The tests, see the ABSTRACT.
+**
+**  RETURN VALUE:
+**	0 - every check passed; 1 - some failed.
+**--
+*/
+int	main	(void)
+{
+static	MH$PORT		s_port;
+static	MH$BKDEV	s_d512, s_d4k;
+static	MH$BKREQ	s_req [T$K_NREQ];
+static	uint8_t		s_img [T$K_IMGSZ], s_want [T$K_IMGSZ], s_got [T$K_IMGSZ];
+uint8_t			*l_buf [T$K_NREQ];
+char			l_img [] = "t_bk_XXXXXX", l_img4 [] = "t_bk_XXXXXX";
+uint64_t		l_size;
+unsigned		l_n;
+int			l_fd, l_ok;
+
+	mh$inimsg();
+
+	for ( unsigned i = 0; i < T$K_IMGSZ; i++ )
+		s_img[i] = (uint8_t) (i * 13 + 5 + (i >> 9));
+
+	for ( unsigned i = 0; i < T$K_NREQ; i++ )
+		l_buf[i] = aligned_alloc(4096, 8192);
+
+	l_fd = mkstemp(l_img);
+	$CHECK((l_fd >= 0) && (T$K_IMGSZ == pwrite(l_fd, s_img, T$K_IMGSZ, 0)), "an image of 1 MB, 512");
+	close(l_fd);
+	l_fd = mkstemp(l_img4);
+	$CHECK((l_fd >= 0) && (T$K_IMGSZ == pwrite(l_fd, s_img, T$K_IMGSZ, 0)), "an image of 1 MB, 4096");
+	close(l_fd);
+
+	$CHECK(1 & mh$bk_init(), "io_uring started");
+	$CHECK((1 & mh$bk_open(&s_d512, l_img, 0, 0, &l_size)) && (l_size == T$K_IMGSZ) && (s_d512.ssz == 512) && (s_d512.type == MH$K_DEV_FILE),
+		"a file of 512-octet sectors");
+	$CHECK((1 & mh$bk_open(&s_d4k, l_img4, 0, 4096, &l_size)) && (s_d4k.ssz == 4096), "a file taken as a disk of 4096-octet sectors");
+
+	/*
+	**  512: a WRITE of /SYNC=DSYNC, a READ that runs past the end of the file
+	*/
+	memset(l_buf[0], 0x5A, 4096);
+	s_t$submit(&s_req[0], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 8192, 4096, l_buf[0]);
+	l_fd = open(l_img, O_RDONLY);
+	$CHECK(s_t$wait(&s_port, 1) && !s_req[0].err && (4096 == pread(l_fd, s_got, 4096, 8192)) && !memcmp(s_got, l_buf[0], 4096),
+		"WRITE 4096 at 8192: on the file");
+	memset(l_buf[1], 0xEE, 1024);
+	s_t$submit(&s_req[1], &s_d512, MH$K_BK_READ, 0, T$K_IMGSZ - 512, 1024, l_buf[1]);
+	memset(s_want, 0, 1024);
+	memcpy(s_want, s_img + T$K_IMGSZ - 512, 512);
+	$CHECK(s_t$wait(&s_port, 2) && !s_req[1].err && !memcmp(l_buf[1], s_want, 1024), "READ past the end of the file: the data, then zeros");
+
+	/*
+	**  4096: eight WRITEs of 512 into one sector at once, then one of 1024
+	**  over the last block of it and the first of the next - every one an
+	**  RMW, every one after the first waits for the range; the last one
+	**  given wins where they overlap
+	*/
+	memcpy(s_want, s_img, T$K_IMGSZ);
+	s_given = 0;
+
+	for ( unsigned i = 0; i < 8; i++ )
+		{
+		memset(l_buf[i], (int) (0x10 + i), 512);
+		memcpy(s_want + i * 512, l_buf[i], 512);
+		s_t$submit(&s_req[i], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, i * 512, 512, l_buf[i]);
+		}
+
+	memset(l_buf[8], 0x77, 1024);
+	memcpy(s_want + 3584, l_buf[8], 1024);
+	s_t$submit(&s_req[8], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 3584, 1024, l_buf[8]);
+
+	l_ok = s_t$wait(&s_port, 9);
+
+	for ( unsigned i = 0; i < 9; i++ )
+		l_ok = l_ok && !s_req[i].err;
+
+	l_fd = open(l_img4, O_RDONLY);
+	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
+		"4096: 9 WRITEs into the same sectors at once, none lost");
+	$CHECK((s_d4k.nrmw == 9) && (s_d4k.nlockwait == 8) && !s_d4k.locks && !s_d4k.lwhead, "... 9 RMW, 8 waited for the range, nothing held");
+
+	/*
+	**  4096: a READ not on whole sectors; a WRITE on whole sectors goes
+	**  straight; ERASE not on whole sectors, ERASE on whole sectors
+	*/
+	s_given = 0;
+	s_t$submit(&s_req[0], &s_d4k, MH$K_BK_READ, 0, 1536, 5000 - 1536 + 4, l_buf[0]);
+	$CHECK(s_t$wait(&s_port, 1) && !s_req[0].err && !memcmp(l_buf[0], s_want + 1536, 5000 - 1536 + 4), "4096: READ at 1536 of 3468 octets");
+
+	memset(l_buf[1], 0x99, 8192);
+	memcpy(s_want + 16384, l_buf[1], 8192);
+	s_t$submit(&s_req[1], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 16384, 8192, l_buf[1]);
+	$CHECK(s_t$wait(&s_port, 2) && !s_req[1].err && (s_d4k.nrmw == 9), "4096: WRITE of two whole sectors, no RMW");
+
+	memset(s_want + 4608, 0, 1024);
+	s_t$submit(&s_req[2], &s_d4k, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 4608, 1024, NULL);
+	memset(s_want + 32768, 0, 8192);
+	s_t$submit(&s_req[3], &s_d4k, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 32768, 8192, NULL);
+	$CHECK(s_t$wait(&s_port, 4) && !s_req[2].err && !s_req[3].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0))
+		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 10), "4096: ERASE of 1024 at 4608 (RMW), of 8192 at 32768 (fallocate)");
+	close(l_fd);
+
+	/*
+	**  Group commit: 24 WRITEs at once, a few fdatasync for all of them
+	*/
+	s_given = 0;
+	memcpy(s_want, s_img, T$K_IMGSZ);
+
+	for ( unsigned i = 0; i < 24; i++ )
+		{
+		memset(l_buf[i], (int) (0xA0 + i), 4096);
+		s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
+		}
+
+	l_ok = s_t$wait(&s_port, 24);
+	l_fd = open(l_img, O_RDONLY);
+
+	for ( unsigned i = 0; i < 24; i++ )
+		l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
+
+	close(l_fd);
+	l_n = (unsigned) s_d512.nsync;
+	$CHECK(l_ok && (s_d512.nsyncw == 24) && (l_n >= 1) && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
+		"GROUP: 24 WRITEs, every one on the file, fewer fdatasync than writes");
+	printf("T_BK: group commit - %u fdatasync for 24 writes\n", l_n);
+
+	unlink(l_img);
+	unlink(l_img4);
+
+	for ( unsigned i = 0; i < T$K_NREQ; i++ )
+		free(l_buf[i]);
+
+	printf("T_BK: %d check(s), %d failed\n", s_checks, s_fails);
+
+	return	s_fails ? 1 : 0;
+}

@@ -1,0 +1,231 @@
+.\"+++
+.\"
+.\"	FACILITY:	MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+.\"
+.\"	MODULE:		doc/mscphub.8
+.\"
+.\"	ABSTRACT:	The manual page of the server.
+.\"
+.\"	AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+.\"
+.\"	CREATION DATE:	18-OCT-2026
+.\"
+.\"	MODIFICATION HISTORY:
+.\"
+.\"		20-OCT-2026	RRL	X01-10 : Initial public version.
+.\"
+.\"---
+.TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.SH NAME
+mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
+.SH SYNOPSIS
+.B mscphub
+.BI /CONFIG= file
+.br
+.B mscphub
+.BI /INTERFACE= if
+.BI /NODE= name
+.BI /SYSTEMID= n
+.BI /GROUP= n
+.BI /AUTHORIZE= hex
+.RI [ /qualifiers ]
+.br
+.B mscphub
+.RB /HELP [=\(dq\fItopic\fR\ ...\(dq]
+.SH DESCRIPTION
+.B mscphub
+lets OpenVMS nodes on the same LAN use Linux files and block devices as
+their own disks.  To an OpenVMS node it looks like a disk controller of the
+HSC kind: the node sees the disks with
+.B SHOW DEVICE
+and mounts them with
+.BR MOUNT ,
+one node or several at once
+.RB ( MOUNT/CLUSTER ).
+.PP
+The server speaks NISCA, the protocol of PEDRIVER, on the Ethernet
+(ethertype 60\-07).  It is an SCS node with the disk server MSCP$DISK and
+without a connection manager: it is never a member of the VMScluster and
+has no votes.  The OpenVMS nodes need no change \- the same group number
+and cluster password, and a LAN adapter on the segment of the server.
+.PP
+A WRITE is answered only when its data is on the disk of the Linux host:
+OpenVMS never asks a disk to flush a cache of its own.
+.PP
+A parameter is given on the command line or, one per line, in the file of
+.BR /CONFIG ;
+a line of the file that begins with
+.B !
+is a comment.
+.BI \-\- NAME = value
+may be written for
+.BI / NAME = value\fR.
+A parameter the server does not know is passed over with a warning \- read
+the log after a change.
+.SH PARAMETERS
+.TP
+.BI /CONFIG= file
+Read the parameters from
+.IR file .
+.TP
+.BI /INTERFACE= name
+The Linux interface the OpenVMS nodes are on: an Ethernet adapter, a
+bridge, a VLAN, a tap device in a bridge.  Mandatory.  The server needs
+CAP_NET_RAW.
+.TP
+.BI /NODE= name
+The SCSNODE of the server, 1 to 6 of A\-Z, 0\-9, $ and _.  Mandatory; no
+other node of the group may have it.
+.TP
+.BI /SYSTEMID= n
+The SCSSYSTEMID of the server, 1 to 65535.  Mandatory; it must differ in its
+low 16 bits from that of every other node of the group.
+.TP
+.BI /GROUP= n
+The cluster group number, 1 to 65279.  Mandatory.
+.TP
+.BI /AUTHORIZE= hex
+The cluster password: the 8\-octet hash of SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT
+of an OpenVMS node, 16 hexadecimal digits, octet by octet.  Mandatory.
+.TP
+.BI /LISTEN= seconds
+How long the server listens before it sends anything, 1 to 60; default 4.
+A node that has the name or the system ID of the server stops it
+(IDCLASH, NAMECLASH).
+.TP
+.BI /ALLOCLASS= n
+The allocation class of the disks, 0 to 255; default 0.  With 42 the node
+names the disk DKA100 of the server $42$DKA100; with 0, MHUB$DKA100.
+.TP
+\fB/UNIT0\fR ... \fB/UNIT7=\fIname\fB,\fIpath\fR[\fB,RO\fR][\fB,MEDIA=\fImedium\fR][\fB,SECTOR=\fIoctets\fR]
+A disk.  The
+.I name
+is DK, a controller letter and a unit number: DKA100.  The
+.I path
+is a file \- its size is the size of the disk \- or a block device, opened
+with O_DIRECT and O_EXCL: a device in use on the host is refused (DEVBUSY).
+A device of 4096\-octet sectors is served; a write that does not fill whole
+sectors is done as read\-modify\-write.
+.B RO
+serves it read only;
+.B MEDIA=
+names what the node is told the disk is \- RZ29 by default, RRD42 with
+.BR RO ;
+.B SECTOR=
+takes a file as a disk of larger sectors, for tests only.  An ISO image of
+the OpenVMS CD is served as it is, with
+.BR RO .
+.TP
+.BR /SYNC= DSYNC | GROUP | NONE
+When a WRITE is on the disk.
+.B DSYNC
+(the default): every write by itself (RWF_DSYNC).
+.BR GROUP :
+the writes that come while the disk is flushing share the next fdatasync.
+.BR NONE :
+as
+.BR /UNSAFE .
+.TP
+.BI /CREDITS= n
+How many commands a node may have in progress at once, 2 to 64; default 16.
+.TP
+.BR /ACK= FLUSH | HOLD
+When the server acknowledges the packets of a node alone, when it has
+nothing to send.
+.B FLUSH
+(the default): as soon as the frames that came in are taken.
+.BR HOLD :
+only when the node asks, after 4 packets or on the 20 ms tick; otherwise
+the acknowledgement goes with the next packet of the server.  For tests.
+.TP
+.BR /TIMEZONE= LOCAL | UTC | \fR[\fB+\fR|\fB\-\fR]\fIhh\fR[\fB:\fImm\fR]
+The zone of the time the server tells the nodes (an OpenVMS node keeps
+local time).
+.B LOCAL
+(the default) is the zone of the host.
+.TP
+.B /UNSAFE
+Answer a WRITE as soon as Linux has its data in the page cache.  For tests
+only: a crash of the host loses writes the node believes are done.
+.TP
+.B /PASSIVE
+Only listen and report the nodes seen; send nothing.  Safe on any LAN.
+.TP
+.B /TRACE
+Log every frame and every step of every channel.
+.TP
+.BI /LOGFILE= file
+Write the messages to
+.I file
+rather than to the standard error.
+.TP
+.BR /HELP [=\(dq\fItopic\fR\ ...\(dq]
+Display the help library: every parameter, the troubleshooting, every
+message and what to do about it.
+.B mscphub \(dq/HELP=Messages IOSTUCK\(dq
+.SH SIGNALS
+.TP
+.BR SIGTERM ", " SIGINT
+Stop: HOSTSHUT on every virtual circuit, BYE to the group, the counters.
+.TP
+.B SIGUSR1
+Log what the server is doing: UPTIME, a NODESTATS for each node (the
+channel, the virtual circuit, the SCS connections), then the counters
+STATS, TRSTATS, ACKSTATS, BLKSTATS, MSCPSTATS and, for each disk, UNITSTATS,
+BKSTATS and LATSTATS (the time of its READ and WRITE commands).
+.SH MESSAGES
+Every message has the form of OpenVMS:
+.PP
+.RS
+%MSCPHUB\-F\-IDCLASH, node ALPHA1 (08\-00\-2B\-E5\-40\-01) uses the system ID low word 65534 of this server
+.RE
+.PP
+The letter is the severity: S, I, W, E, F (fatal \- the server stops).
+.B mscphub \(dq/HELP=Messages\(dq
+explains each of them and what to do.
+.SH FILES
+.TP
+.I @MH_CONFFILE@
+The configuration of the service; the installation leaves it alone and
+puts
+.I @MH_CONFFILE@.example
+next to it.
+.TP
+.I @MH_SYSTEMDDIR@/mscphub.service
+The systemd unit: installed, not enabled.
+.TP
+.I @MH_FULL_HLBDIR@/mscphub.hlb
+The help library of /HELP, and ru/mscphub_ru.hlb in Russian.
+.TP
+.I @MH_FULL_DOCDIR@/
+The guide, in English and in Russian, and README.
+.SH EXAMPLES
+On the command line, listening only:
+.PP
+.RS
+.nf
+mscphub /PASSIVE /INTERFACE=eth1 /NODE=MHUB /SYSTEMID=65200 /GROUP=4242 /AUTHORIZE=5A3C9E1700000000
+.fi
+.RE
+.PP
+As a service:
+.PP
+.RS
+.nf
+cp @MH_CONFFILE@.example @MH_CONFFILE@
+vi @MH_CONFFILE@
+systemctl enable \-\-now mscphub
+systemctl kill \-s USR1 mscphub
+journalctl \-u mscphub \-n 30
+.fi
+.RE
+.SH NOTES
+The disk I/O is io_uring: a Linux kernel 5.10 or later, with io_uring not
+turned off (kernel.io_uring_disabled).  Do not serve a file or a device the
+host itself uses, and do not change one while it is served.
+.SH AUTHOR
+StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+.SH SEE ALSO
+.BR systemctl (1),
+.BR journalctl (1),
+.BR tcpdump (8)

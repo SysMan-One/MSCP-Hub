@@ -1,0 +1,49 @@
+#+++
+#
+#	FACILITY:	MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#	MODULE:		cmake/uninstall.cmake.in
+#
+#	ABSTRACT:	The script behind the 'uninstall' target: remove the
+#			files the install step has recorded in the manifest.
+#
+#	DESCRIPTION:	CMake writes install_manifest.txt into the build
+#			directory as it installs, one absolute path per line.
+#			Only those paths are removed, and no directory is.
+#			The configuration of the service, mscphub.conf, is not
+#			in the manifest - the installation never writes it -
+#			so it stays.  DESTDIR is honoured.
+#
+#	AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#	CREATION DATE:	18-OCT-2026
+#
+#	MODIFICATION HISTORY:
+#
+#		20-OCT-2026	RRL	X01-10 : Initial public version.
+#
+#---
+
+set(MANIFEST "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt")
+
+if ( NOT EXISTS "${MANIFEST}" )
+	message(FATAL_ERROR "No ${MANIFEST} - nothing has been installed from this build directory")
+endif()
+
+file(STRINGS "${MANIFEST}" FILES)
+
+foreach ( F ${FILES} )
+	set(P "$ENV{DESTDIR}${F}")
+
+	if ( EXISTS "${P}" OR IS_SYMLINK "${P}" )
+		message(STATUS "Removing ${P}")
+
+		file(REMOVE "${P}")
+
+		if ( EXISTS "${P}" OR IS_SYMLINK "${P}" )
+			message(WARNING "Cannot remove ${P}")
+		endif()
+	else()
+		message(STATUS "Not there: ${P}")
+	endif()
+endforeach()
