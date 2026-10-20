@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BK"
-#define	__IDENT__	"X01-11ECO1"
-#define	__REV__		"1.11.1"
+#define	__IDENT__	"X01-12"
+#define	__REV__		"1.12.0"
 
 /*
 **++
@@ -25,6 +25,7 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11ECO1 : the wait for the requests is 30 s,
 **						not 5: an SD card under load is that slow.
+**		20-OCT-2026	RRL	X01-12 : RMW of both edges, of one edge.
 **
 **--
 */
@@ -241,6 +242,24 @@ int			l_fd, l_ok;
 	s_t$submit(&s_req[3], &s_d4k, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 32768, 8192, NULL);
 	$CHECK(s_t$wait(&s_port, 4) && !s_req[2].err && !s_req[3].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0))
 		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 10), "4096: ERASE of 1024 at 4608 (RMW), of 8192 at 32768 (fallocate)");
+
+	/*
+	**  4096: the reads of the first and of the last sector go at once - a
+	**  WRITE over the end of one sector, a whole one and the start of a
+	**  third; one with the first sector alone, one with the last alone
+	*/
+	s_given = 0;
+	memset(l_buf[4], 0x31, 5632);
+	memcpy(s_want + 52736, l_buf[4], 5632);
+	s_t$submit(&s_req[4], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 52736, 5632, l_buf[4]);
+	memset(l_buf[5], 0x32, 3072);
+	memcpy(s_want + 66560, l_buf[5], 3072);
+	s_t$submit(&s_req[5], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 66560, 3072, l_buf[5]);
+	memset(l_buf[6], 0x33, 1024);
+	memcpy(s_want + 73728, l_buf[6], 1024);
+	s_t$submit(&s_req[6], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 73728, 1024, l_buf[6]);
+	$CHECK(s_t$wait(&s_port, 3) && !s_req[4].err && !s_req[5].err && !s_req[6].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0))
+		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 13), "4096: RMW of both edges at once, of the first, of the last");
 	close(l_fd);
 
 	/*

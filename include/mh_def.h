@@ -44,6 +44,8 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-12 : the first and the last sector of an RMW
+**						are read at once.
 **
 **--
 */
@@ -53,11 +55,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-10"
+#define	__IDENT__	"X01-12"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.10.0"
+#define	__REV__		"1.12.0"
 #endif
 
 #ifndef	__FAC__
@@ -436,10 +438,13 @@ typedef struct mh_bkreq_t {
 	/*
 	**  MHBK: the step, what the step has moved, the range of whole sectors
 	**  of a device of sectors over 512 octets and its bounce buffer, when
-	**  it went in (for IOSTUCK)
+	**  it went in (for IOSTUCK); of an RMW: what is read of the first and
+	**  of the last sector, the reads in the ring, the first error of them
 	*/
 	int		stage, locked, stuck;
 	uint32_t	done;
+	uint32_t	edone [2];
+	int		einfl, eerr;
 	uint64_t	aoff;
 	uint32_t	alen;
 	uint8_t *	bounce;

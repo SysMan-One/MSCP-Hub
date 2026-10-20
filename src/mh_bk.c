@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBK"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-12"
+#define	__REV__		"1.12.0"
 
 /*
 **++
@@ -51,6 +51,8 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		20-OCT-2026	RRL	X01-12 : the first and the last sector of an RMW
+**						are read at once.
 **
 **--
 */
@@ -79,8 +81,7 @@
 */
 enum	{
 	MH$K_BKS_IO		= 1,		/* The data: read, write, fallocate		*/
-	MH$K_BKS_HEAD,				/* RMW: reading the first sector		*/
-	MH$K_BKS_TAIL,				/* RMW: reading the last sector			*/
+	MH$K_BKS_EDGES,				/* RMW: reading the first and the last sector	*/
 	MH$K_BKS_ZFILL,				/* ZERO without fallocate: zeros written	*/
 	MH$K_BKS_DSYNC,				/* fdatasync after a ZERO of /SYNC=DSYNC	*/
 	MH$K_BKS_GROUP				/* Done, waiting for the fdatasync of a group	*/
@@ -441,15 +442,6 @@ uint32_t		l_n;
 
 	switch ( a_req->stage )
 		{
-		case	MH$K_BKS_HEAD:
-			io_uring_prep_read(l_sqe, l_dev->fd, a_req->bounce + a_req->done, l_dev->ssz - a_req->done, a_req->aoff + a_req->done);
-			break;
-
-		case	MH$K_BKS_TAIL:
-			io_uring_prep_read(l_sqe, l_dev->fd, a_req->bounce + a_req->alen - l_dev->ssz + a_req->done, l_dev->ssz - a_req->done,
-				a_req->aoff + a_req->alen - l_dev->ssz + a_req->done);
-			break;
-
 		case	MH$K_BKS_ZFILL:
 			l_n = $MIN(a_req->len - a_req->done, (uint32_t) sizeof(s_zeros));
 			io_uring_prep_write(l_sqe, l_dev->fd, s_zeros, l_n, a_req->off + a_req->done);
@@ -494,6 +486,135 @@ uint32_t		l_n;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	Put in the ring the read of what is left of an edge sector of an
+**	RMW: 0 - the first one, 1 - the last one.  Its completion carries
+**	the request with the edge in the low bit.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_req		The request, stage EDGES
+**	a_edge		0, 1
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; STS$K_ERROR - the ring takes nothing.
+**--
+*/
+static	int	s_mh$bk_edge	(
+		MH$BKREQ *	a_req,
+		unsigned	a_edge
+			)
+{
+struct io_uring_sqe	*l_sqe;
+MH$BKDEV		*l_dev = a_req->dev;
+uint32_t		l_at = (a_edge ? a_req->alen - l_dev->ssz : 0) + a_req->edone[a_edge];
+
+	if ( !(l_sqe = s_mh$bk_sqe((void *) ((uintptr_t) a_req | a_edge))) )
+		return	STS$K_ERROR;
+
+	io_uring_prep_read(l_sqe, l_dev->fd, a_req->bounce + l_at, l_dev->ssz - a_req->edone[a_edge], a_req->aoff + l_at);
+	a_req->einfl++;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	A read of an edge sector of an RMW is over.  The rest of it is asked
+**	for again; when both reads are in, the data goes into the bounce
+**	buffer and the whole sectors are written.  An error waits for the
+**	other read, so that the request is not given back under the ring.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_req		The request, stage EDGES
+**	a_edge		0 - the first sector, 1 - the last one
+**	a_res		The result of the read: octets, 0, -errno
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; the condition value of the next step.
+**--
+*/
+static	int	s_mh$bk_edgedone	(
+		MH$BKREQ *	a_req,
+		unsigned	a_edge,
+		int		a_res
+			)
+{
+MH$BKDEV	*l_dev = a_req->dev;
+
+	a_req->einfl--;
+
+	if ( (a_res == -EINTR) || (a_res == -EAGAIN) )
+		{
+		if ( !a_req->eerr && (1 & s_mh$bk_edge(a_req, a_edge)) )
+			{
+			io_uring_submit(&s_bk.ring);
+
+			return	STS$K_SUCCESS;
+			}
+
+		a_res = -EIO;
+		}
+
+	if ( a_res < 0 )
+		{
+		if ( !a_req->eerr )
+			a_req->eerr = ((a_res == -ECANCELED) && a_req->stuck) ? ETIMEDOUT : -a_res;
+		}
+	else	{
+		/*
+		**  A sector past the end of a file reads as zeros
+		*/
+		if ( !a_res )
+			{
+			memset(a_req->bounce + (a_edge ? a_req->alen - l_dev->ssz : 0) + a_req->edone[a_edge], 0,
+				l_dev->ssz - a_req->edone[a_edge]);
+			a_res = (int) (l_dev->ssz - a_req->edone[a_edge]);
+			}
+
+		if ( ((a_req->edone[a_edge] += (uint32_t) a_res) < l_dev->ssz) && !a_req->eerr )
+			{
+			if ( 1 & s_mh$bk_edge(a_req, a_edge) )
+				{
+				io_uring_submit(&s_bk.ring);
+
+				return	STS$K_SUCCESS;
+				}
+
+			a_req->eerr = EIO;
+			}
+		}
+
+	if ( a_req->einfl )
+		return	STS$K_SUCCESS;
+
+	if ( a_req->eerr )
+		{
+		a_req->err = a_req->eerr;
+
+		return	s_mh$bk_finish(a_req);
+		}
+
+	a_req->stage	= MH$K_BKS_IO;
+	a_req->done	= 0;
+
+	if ( a_req->op == MH$K_BK_WRITE )
+		memcpy(a_req->bounce + (a_req->off - a_req->aoff), a_req->buf, a_req->len);
+	else	memset(a_req->bounce + (a_req->off - a_req->aoff), 0, a_req->len);
+
+	return	s_mh$bk_step(a_req);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	The first step of a request that may go: the bounce buffer of a
 **	request not on whole sectors, and what is read first.
 **
@@ -510,6 +631,7 @@ static	int	s_mh$bk_start	(
 			)
 {
 MH$BKDEV	*l_dev = a_req->dev;
+int		l_head, l_tail;
 
 	a_req->done	= 0;
 	a_req->stage	= MH$K_BKS_IO;
@@ -525,13 +647,35 @@ MH$BKDEV	*l_dev = a_req->dev;
 
 			/*
 			**  The first sector when the data begins in it, the last
-			**  one when the data ends in it; one read when they are
-			**  the same; the data goes in after both
+			**  one when the data ends in it - both reads at once; one
+			**  read when they are the same sector; the data goes in
+			**  after both
 			*/
-			if ( a_req->off & (l_dev->ssz - 1) )
-				a_req->stage = MH$K_BKS_HEAD;
-			else if ( (a_req->off + a_req->len) & (l_dev->ssz - 1) )
-				a_req->stage = MH$K_BKS_TAIL;
+			l_head = (a_req->off & (l_dev->ssz - 1)) != 0;
+			l_tail = ((a_req->off + a_req->len) & (l_dev->ssz - 1)) && !(l_head && (a_req->alen == l_dev->ssz));
+
+			if ( l_head || l_tail )
+				{
+				a_req->stage		= MH$K_BKS_EDGES;
+				a_req->edone[0]		= a_req->edone[1] = 0;
+				a_req->einfl		= a_req->eerr = 0;
+
+				if ( (l_head && !(1 & s_mh$bk_edge(a_req, 0))) || (l_tail && !(1 & s_mh$bk_edge(a_req, 1))) )
+					{
+					/*
+					**  A read already in the ring ends the request
+					**  with the error when it comes back
+					*/
+					if ( !a_req->einfl )
+						return	STS$K_ERROR;
+
+					a_req->eerr = EIO;
+					}
+
+				io_uring_submit(&s_bk.ring);
+
+				return	STS$K_SUCCESS;
+				}
 			}
 		}
 
@@ -568,7 +712,6 @@ static	int	s_mh$bk_done	(
 		int		a_res
 			)
 {
-MH$BKDEV	*l_dev = a_req->dev;
 uint32_t	l_want;
 
 	if ( (a_res == -EINTR) || (a_res == -EAGAIN) )
@@ -595,38 +738,6 @@ uint32_t	l_want;
 
 	switch ( a_req->stage )
 		{
-		case	MH$K_BKS_HEAD:
-		case	MH$K_BKS_TAIL:
-			/*
-			**  A sector past the end of a file reads as zeros
-			*/
-			if ( !a_res )
-				{
-				memset(a_req->bounce + ((a_req->stage == MH$K_BKS_HEAD) ? 0 : a_req->alen - l_dev->ssz) + a_req->done, 0,
-					l_dev->ssz - a_req->done);
-				a_res = (int) (l_dev->ssz - a_req->done);
-				}
-
-			if ( (a_req->done += (uint32_t) a_res) < l_dev->ssz )
-				return	s_mh$bk_step(a_req);
-
-			a_req->done = 0;
-
-			if ( (a_req->stage == MH$K_BKS_HEAD) && ((a_req->off + a_req->len) & (l_dev->ssz - 1)) && (a_req->alen > l_dev->ssz) )
-				{
-				a_req->stage = MH$K_BKS_TAIL;
-
-				return	s_mh$bk_step(a_req);
-				}
-
-			a_req->stage = MH$K_BKS_IO;
-
-			if ( a_req->op == MH$K_BK_WRITE )
-				memcpy(a_req->bounce + (a_req->off - a_req->aoff), a_req->buf, a_req->len);
-			else	memset(a_req->bounce + (a_req->off - a_req->aoff), 0, a_req->len);
-
-			return	s_mh$bk_step(a_req);
-
 		case	MH$K_BKS_ZFILL:
 			if ( (a_req->done += (uint32_t) a_res) < a_req->len )
 				return	s_mh$bk_step(a_req);
@@ -970,6 +1081,7 @@ struct io_uring_cqe	*l_cqe;
 MH$BKREQ		*l_req, *l_next;
 MH$BKDEV		*l_dev;
 uint64_t		l_cnt;
+uintptr_t		l_tag;
 int			l_res;
 
 	if ( s_bk.efd < 0 )
@@ -982,7 +1094,8 @@ int			l_res;
 		{
 		while ( !io_uring_peek_cqe(&s_bk.ring, &l_cqe) )
 			{
-			l_req = (MH$BKREQ *) io_uring_cqe_get_data(l_cqe);
+			l_tag = (uintptr_t) io_uring_cqe_get_data(l_cqe);
+			l_req = (MH$BKREQ *) (l_tag & ~(uintptr_t) 1);
 			l_res = l_cqe->res;
 			io_uring_cqe_seen(&s_bk.ring, l_cqe);
 
@@ -991,6 +1104,15 @@ int			l_res;
 			*/
 			if ( !l_req )
 				continue;
+
+			/*
+			**  A read of an edge sector of an RMW: the edge in the low bit
+			*/
+			if ( l_req->stage == MH$K_BKS_EDGES )
+				{
+				s_mh$bk_edgedone(l_req, (unsigned) (l_tag & 1), l_res);
+				continue;
+				}
 
 			if ( l_req->op != MH$K_BK_SYNC )
 				{
@@ -1078,11 +1200,15 @@ MH$HRB			*l_hrb;
 			$MHMSG(MH$_IOSTUCK, mh$mscp_opname(l_hrb), l_hrb->unit->dvname, l_hrb->lbn, (unsigned) (l_now - l_req->t0));
 		else	$MHMSG(MH$_IOSTUCK, "I/O", "-", (unsigned) (l_req->off / 512), (unsigned) (l_now - l_req->t0));
 
-		if ( (l_sqe = s_mh$bk_sqe(NULL)) )
-			{
-			io_uring_prep_cancel(l_sqe, l_req, 0);
-			io_uring_submit(&s_bk.ring);
-			}
+		/*
+		**  The reads of the edges of an RMW go with the edge in the low
+		**  bit of the request
+		*/
+		for ( unsigned e = 0; e < ((l_req->stage == MH$K_BKS_EDGES) ? 2U : 1U); e++ )
+			if ( (l_sqe = s_mh$bk_sqe(NULL)) )
+				io_uring_prep_cancel(l_sqe, (void *) ((uintptr_t) l_req | e), 0);
+
+		io_uring_submit(&s_bk.ring);
 		}
 
 	(void) a_port;
