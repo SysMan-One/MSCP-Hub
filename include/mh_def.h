@@ -56,6 +56,7 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **
 **--
 */
@@ -134,6 +135,7 @@ enum	{
 	MH$K_MSG_ACKSTATS,			/* The ACKs sent, by why they went, on SIGUSR1	*/
 	MH$K_MSG_LATSTATS,			/* The time of the commands of a unit, on SIGUSR1	*/
 	MH$K_MSG_MISALIGN,			/* A block device starts inside a physical sector	*/
+	MH$K_MSG_NODIRECT,			/* A file is served through the page cache	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -176,6 +178,7 @@ enum	{
 #define	MH$_ACKSTATS		$MHSTS(MH$K_MSG_ACKSTATS,	STS$K_INFO)
 #define	MH$_LATSTATS		$MHSTS(MH$K_MSG_LATSTATS,	STS$K_INFO)
 #define	MH$_MISALIGN		$MHSTS(MH$K_MSG_MISALIGN,	STS$K_WARN)
+#define	MH$_NODIRECT		$MHSTS(MH$K_MSG_NODIRECT,	STS$K_INFO)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -428,7 +431,7 @@ typedef struct mh_lat_t {
 **  Kinds of a unit
 */
 enum	{
-	MH$K_DEV_FILE		= 0,		/* A file: the page cache, flock()		*/
+	MH$K_DEV_FILE		= 0,		/* A file: O_DIRECT if it can, flock()		*/
 	MH$K_DEV_BLK				/* A block device: O_DIRECT, O_EXCL		*/
 	};
 
@@ -473,6 +476,8 @@ typedef struct mh_bkreq_t {
 
 typedef struct mh_bkdev_t {
 	int		fd;			/* -1 - not open				*/
+	int		bfd;			/* A file: through the page cache (odd counts)	*/
+	int		direct;			/* FD is O_DIRECT				*/
 	int		type;			/* MH$K_DEV_*					*/
 	uint32_t	ssz;			/* The sector: 512, 4096; a bigger one is RMW	*/
 

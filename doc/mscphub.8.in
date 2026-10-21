@@ -15,6 +15,7 @@
 .\"		20-OCT-2026	RRL	X01-10 : Initial public version.
 .\"		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 .\"		20-OCT-2026	RRL	X01-12 : 4K disks: the cluster, MISALIGN.
+.\"		21-OCT-2026	RRL	X01-15 : a file O_DIRECT, NODIRECT.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -104,8 +105,10 @@ A disk.  The
 .I name
 is DK, a controller letter and a unit number: DKA100.  The
 .I path
-is a file \- its size is the size of the disk \- or a block device, opened
-with O_DIRECT and O_EXCL: a device in use on the host is refused (DEVBUSY).
+is a file \- its size is the size of the disk, read and written with
+O_DIRECT when its file system allows it (NODIRECT if not) \- or a block
+device, opened with O_DIRECT and O_EXCL: a device in use on the host is
+refused (DEVBUSY).
 A device of 4096\-octet sectors is served; a write that does not fill whole
 sectors is done as read\-modify\-write.  Initialize such a disk on OpenVMS
 with a cluster of 8 or a multiple of 8 (INITIALIZE/CLUSTER=16); a partition
@@ -149,7 +152,7 @@ local time).
 (the default) is the zone of the host.
 .TP
 .B /UNSAFE
-Answer a WRITE as soon as Linux has its data in the page cache.  For tests
+Answer a WRITE as soon as Linux has taken its data, before it is on the disk.  For tests
 only: a crash of the host loses writes the node believes are done.
 .TP
 .B /PASSIVE

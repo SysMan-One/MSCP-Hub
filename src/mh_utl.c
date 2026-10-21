@@ -34,6 +34,7 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **
 **--
 */
@@ -92,6 +93,7 @@ static	EMSG_RECORD	s_msgtab [] = {
 				"!UQ asked, !UQ for a duplicate, !UQ for !UL packets, !UQ when drained, !UQ on the tick"),
 	$MHREC(MH$_LATSTATS,	"LATSTATS, unit !AZ, !AZ: !UQ command!%S, average !UQ us (backend !UQ, transfers !UQ, the rest !UQ), longest !UQ us; "
 				"under 0.1/0.3/1/3/10 ms and longer: !UQ/!UQ/!UQ/!UQ/!UQ/!UQ"),
+	$MHREC(MH$_NODIRECT,	"NODIRECT, !AZ: no direct I/O (!AZ), served through the page cache"),
 	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),
 	$MHREC(MH$_UPTIME,	"UPTIME, MSCPHUB !AZ, node !AZ, up !UL day!%S !2ZL:!2ZL:!2ZL, OpenVMS time of !AZ"),
 	$MHREC(MH$_UNSAFE,	"UNSAFE, /SYNC=NONE: a WRITE is answered before its data is on disk - for tests only"),

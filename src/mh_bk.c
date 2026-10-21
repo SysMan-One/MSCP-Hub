@@ -64,6 +64,7 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **
 **--
 */
@@ -118,6 +119,7 @@ static	int	s_mh$bk_lruhit	(MH$BKDEV *a_dev, uint64_t a_sec);
 static	int	s_mh$bk_cget	(MH$BKDEV *a_dev, uint64_t a_sec, uint8_t *a_dst);
 static	int	s_mh$bk_cput	(MH$BKDEV *a_dev, uint64_t a_sec, const uint8_t *a_src);
 static	int	s_mh$bk_cdrop	(MH$BKDEV *a_dev, uint64_t a_off, uint64_t a_len);
+static	int	s_mh$bk_direct	(MH$BKDEV *a_dev, const char *a_path, int a_ro, uint64_t a_size);
 static	int	s_mh$bk_lruput	(MH$BKDEV *a_dev, uint64_t a_sec);
 
 
@@ -491,6 +493,7 @@ static	int	s_mh$bk_step	(
 struct io_uring_sqe	*l_sqe;
 MH$BKDEV		*l_dev = a_req->dev;
 uint32_t		l_n;
+int			l_fd = (a_req->len & 511) ? l_dev->bfd : l_dev->fd;
 
 	if ( !(l_sqe = s_mh$bk_sqe(a_req)) )
 		return	STS$K_ERROR;
@@ -499,7 +502,7 @@ uint32_t		l_n;
 		{
 		case	MH$K_BKS_ZFILL:
 			l_n = $MIN(a_req->len - a_req->done, (uint32_t) sizeof(s_zeros));
-			io_uring_prep_write(l_sqe, l_dev->fd, s_zeros, l_n, a_req->off + a_req->done);
+			io_uring_prep_write(l_sqe, l_fd, s_zeros, l_n, a_req->off + a_req->done);
 			break;
 
 		case	MH$K_BKS_DSYNC:
@@ -519,9 +522,9 @@ uint32_t		l_n;
 						a_req->aoff + a_req->done);
 				}
 			else if ( a_req->op == MH$K_BK_READ )
-				io_uring_prep_read(l_sqe, l_dev->fd, a_req->buf + a_req->done, a_req->len - a_req->done, a_req->off + a_req->done);
+				io_uring_prep_read(l_sqe, l_fd, a_req->buf + a_req->done, a_req->len - a_req->done, a_req->off + a_req->done);
 			else if ( a_req->op == MH$K_BK_WRITE )
-				io_uring_prep_write(l_sqe, l_dev->fd, a_req->buf + a_req->done, a_req->len - a_req->done, a_req->off + a_req->done);
+				io_uring_prep_write(l_sqe, l_fd, a_req->buf + a_req->done, a_req->len - a_req->done, a_req->off + a_req->done);
 			else	io_uring_prep_fallocate(l_sqe, l_dev->fd, FALLOC_FL_ZERO_RANGE | FALLOC_FL_KEEP_SIZE, a_req->off, a_req->len);
 
 			if ( (a_req->op == MH$K_BK_WRITE) && (a_req->sync == MH$K_SYNC_DSYNC) )
@@ -1175,10 +1178,78 @@ int	l_errno = errno;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	A file opened once more, O_DIRECT, for the data; the first open
+**	stays for the commands of a byte count not a multiple of 512 and
+**	holds the flock.  A file system that does not take direct I/O
+**	(at the open, or at a read of 512 octets at 512 - a disk of 4096
+**	octets a sector), or a file not of whole blocks of 512, is served
+**	through the page cache as before.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_dev		The device: FD, BFD, SSZ; output: FD, DIRECT
+**	a_path		The file
+**	a_ro		1 - read only
+**	a_size		Its size, octets
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS - direct; MH$_NODIRECT - signalled, the page cache.
+**--
+*/
+static	int	s_mh$bk_direct	(
+		MH$BKDEV *	a_dev,
+	const	char *		a_path,
+		int		a_ro,
+		uint64_t	a_size
+			)
+{
+int	l_fd;
+ssize_t	l_res = 0;
+uint8_t	*l_buf;
+
+	if ( a_size & 511 )
+		return	$MHMSG(MH$_NODIRECT, a_path, "the size is not a multiple of 512");
+
+	if ( 0 > (l_fd = open(a_path, (a_ro ? O_RDONLY : O_RDWR) | O_DIRECT | O_CLOEXEC)) )
+		return	$MHMSG(MH$_NODIRECT, a_path, strerror(errno));
+
+	if ( !(l_buf = aligned_alloc(4096, 4096)) )
+		{
+		close(l_fd);
+
+		return	$MHMSG(MH$_NODIRECT, a_path, strerror(ENOMEM));
+		}
+
+	if ( a_size )
+		l_res = pread(l_fd, l_buf, 512, 512);
+
+	free(l_buf);
+
+	if ( l_res < 0 )
+		{
+		l_res = errno;
+		close(l_fd);
+
+		return	$MHMSG(MH$_NODIRECT, a_path, strerror((int) l_res));
+		}
+
+	a_dev->fd	= l_fd;
+	a_dev->direct	= 1;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	Open the file or the device of a unit and learn its size and sector.
-**	A file: the page cache, flock() against a second server.  A block
-**	device: O_DIRECT, O_EXCL - a device mounted on the host or opened by
-**	a second server is refused (DEVBUSY).
+**	A file: flock() against a second server, O_DIRECT if its file system
+**	takes it (NODIRECT if not).  A block device: O_DIRECT, O_EXCL - a
+**	device mounted on the host or opened by a second server is refused
+**	(DEVBUSY).
 **
 **  FORMAL PARAMETERS:
 **
@@ -1207,6 +1278,7 @@ char		l_what [256 + 64];
 
 	memset(a_dev, 0, sizeof(*a_dev));
 	a_dev->fd	= -1;
+	a_dev->bfd	= -1;
 	a_dev->gsync.op	= MH$K_BK_SYNC;
 	a_dev->gsync.dev = a_dev;
 
@@ -1250,7 +1322,18 @@ char		l_what [256 + 64];
 
 		*a_size		= (uint64_t) l_st.st_size;
 		a_dev->ssz	= a_ssz ? a_ssz : 512;
+		a_dev->bfd	= a_dev->fd;
+
+		/*
+		**  Direct I/O as for a block device, if the file system takes
+		**  it: a write RWF_DSYNC through the page cache costs about
+		**  twice as much (ext4)
+		*/
+		s_mh$bk_direct(a_dev, a_path, a_ro, *a_size);
 		}
+
+	if ( a_dev->bfd < 0 )
+		a_dev->bfd = a_dev->fd;
 
 	/*
 	**  512 ... 4096 and a power of two: the bounce buffers and the buffers

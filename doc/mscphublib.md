@@ -139,7 +139,9 @@ A to Z and a number 0 to 9999, for example DKA100. The path is:
 
 - a Linux file (an image, sparse or not). Its size at start-up, in
   blocks of 512 octets, is the size of the disk. The server takes the
-  file for itself (flock): a second server cannot serve it too.
+  file for itself (flock): a second server cannot serve it too. It
+  reads and writes the file with direct I/O (O_DIRECT) when the file
+  system allows it, else through the page cache (NODIRECT).
 - a block device: a disk, a partition, an LVM volume, a loop device,
   an iSCSI LUN. The server opens it with O_DIRECT and O_EXCL: a device
   that is mounted on the Linux host, or that another server has, is
@@ -246,8 +248,8 @@ the operator sees it; the protocol works with any zone.
 
 ## /UNSAFE -- answer a WRITE before its data is on disk
 
-The server answers a write as soon as Linux has the data in its page
-cache. It is faster, but a crash or a power failure of the Linux host
+The server answers a write as soon as Linux has taken the data, before
+it is on the disk. It is faster, but a crash or a power failure of the Linux host
 can lose data the OpenVMS node believes is written. Use it only for
 tests. The server says UNSAFE at start-up.
 
@@ -614,6 +616,15 @@ The server cannot open a block device of /UNITn for itself: it is
 mounted on the Linux host, it is in use by LVM or RAID, or another
 server has it. The server stops. Action: unmount it, or give another
 device. Never serve a device the Linux host uses.
+
+### NODIRECT
+
+The file system of a file of /UNITn does not allow direct I/O
+(O_DIRECT) - tmpfs of an old kernel, some network file systems - or
+the size of the file is not whole blocks of 512 octets. The server
+serves the file through the page cache: it works, but every write
+costs more. No action; for speed put the image on ext4 or XFS, or
+serve a partition or an LVM volume.
 
 ### MISALIGN
 

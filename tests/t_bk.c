@@ -33,6 +33,7 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		21-OCT-2026	RRL	X01-15 : a file O_DIRECT; odd byte counts, NODIRECT.
 **
 **--
 */
@@ -202,11 +203,11 @@ struct	{
 int	main	(void)
 {
 static	MH$PORT		s_port;
-static	MH$BKDEV	s_d512, s_d4k;
+static	MH$BKDEV	s_d512, s_d4k, s_dodd;
 static	MH$BKREQ	s_req [T$K_NREQ];
 static	uint8_t		s_img [T$K_IMGSZ], s_want [T$K_IMGSZ], s_got [T$K_IMGSZ];
 uint8_t			*l_buf [T$K_NREQ];
-char			l_img [] = "t_bk_XXXXXX", l_img4 [] = "t_bk_XXXXXX";
+char			l_img [] = "t_bk_XXXXXX", l_img4 [] = "t_bk_XXXXXX", l_imgo [] = "t_bk_XXXXXX";
 uint64_t		l_size;
 unsigned		l_n;
 int			l_fd, l_ok;
@@ -401,6 +402,32 @@ int			l_fd, l_ok;
 	$CHECK(l_ok && (s_d512.nsyncw == 24) && (l_n >= 1) && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
 		"GROUP: 24 WRITEs, every one on the file, fewer fdatasync than writes");
 	printf("T_BK: group commit - %u fdatasync for 24 writes\n", l_n);
+
+	/*
+	**  A file: O_DIRECT if its file system takes it.  A byte count not a
+	**  multiple of 512 goes through the page cache, and a direct READ
+	**  after it sees its data; a file not of whole blocks - NODIRECT
+	*/
+	printf("T_BK: the file of 512 - %s\n", s_d512.direct ? "O_DIRECT" : "the page cache");
+	s_given = 0;
+	memset(l_buf[0], 0xD7, 700);
+	s_t$submit(&s_req[0], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 196608, 700, l_buf[0]);
+	l_ok = s_t$wait(&s_port, 1) && !s_req[0].err;
+	s_t$submit(&s_req[1], &s_d512, MH$K_BK_READ, 0, 196608, 1024, l_buf[1]);
+	s_t$submit(&s_req[2], &s_d512, MH$K_BK_READ, 0, 196608 + 600, 100, l_buf[2]);
+	memcpy(s_want, s_img + 196608, 1024);
+	memset(s_want, 0xD7, 700);
+	$CHECK(l_ok && s_t$wait(&s_port, 3) && !s_req[1].err && !s_req[2].err && !memcmp(l_buf[1], s_want, 1024) && !memcmp(l_buf[2], s_want + 600, 100),
+		"a WRITE of 700 octets, a READ of 1024 over it sees it, a READ of 100");
+
+	l_fd = mkstemp(l_imgo);
+	$CHECK((l_fd >= 0) && (1000 == pwrite(l_fd, s_img, 1000, 0)), "a file of 1000 octets");
+	close(l_fd);
+	s_given = 0;
+	l_ok = (1 & mh$bk_open(&s_dodd, l_imgo, 0, 0, &l_size)) && (l_size == 1000) && !s_dodd.direct && (s_dodd.bfd == s_dodd.fd);
+	s_t$submit(&s_req[0], &s_dodd, MH$K_BK_READ, 0, 0, 512, l_buf[0]);
+	$CHECK(l_ok && s_t$wait(&s_port, 1) && !s_req[0].err && !memcmp(l_buf[0], s_img, 512), "a file not of whole blocks: the page cache (NODIRECT), READ");
+	unlink(l_imgo);
 
 	/*
 	**  ERASE of a file: up to MH$K_BK_ZFILLMAX zeros are written, so no
