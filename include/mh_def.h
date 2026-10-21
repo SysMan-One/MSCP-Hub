@@ -54,6 +54,8 @@
 **						512 sectors written.
 **		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
+**		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
+**						fallocate (unwritten extents); BKSTATS counts ZERO.
 **
 **--
 */
@@ -63,11 +65,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-14"
+#define	__IDENT__	"X01-15"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.14.0"
+#define	__REV__		"1.15.0"
 #endif
 
 #ifndef	__FAC__
@@ -245,6 +247,7 @@ enum	{
 #define	MH$K_BK_RING		1024		/* Entries of the io_uring			*/
 #define	MH$K_BK_STUCK		15		/* s: a request longer in the backend - IOSTUCK	*/
 #define	MH$K_BK_ZEROSZ		65536		/* Zeros written a piece at a time		*/
+#define	MH$K_BK_ZFILLMAX	(1024 * 1024)	/* A ZERO of a file up to it: zeros written	*/
 
 /*
 **  What the CC messages of the server carry
@@ -491,6 +494,7 @@ typedef struct mh_bkdev_t {
 	MH$BKREQ	gsync;
 
 	uint64_t	nrmw, nlockwait, nsync, nsyncw;
+	uint64_t	nzero, nzfill;		/* ZERO; of them, zeros written to a file	*/
 
 	/*
 	**  What a cache of the sectors last written would save - a model, no

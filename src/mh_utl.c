@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-14"
-#define	__REV__		"1.14.0"
+#define	__IDENT__	"X01-15"
+#define	__REV__		"1.15.0"
 
 /*
 **++
@@ -32,6 +32,8 @@
 **						512 sectors written.
 **		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
+**		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
+**						fallocate (unwritten extents); BKSTATS counts ZERO.
 **
 **--
 */
@@ -82,7 +84,7 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_UNITSTATS,	"UNITSTATS, unit !AZ: ONLINE to !UL host!%S, !UL command!%S running, !UL waiting, !UQ read!%S (!UQ octets), !UQ write!%S (!UQ octets)"),
 	$MHREC(MH$_BKSTATS,	"BKSTATS, unit !AZ: sector !UL, !UQ read-modify-write!%S needing !UQ sector!%S, !UQ from the cache "
 				"(in the last 2/16/128/512 written: !UQ/!UQ/!UQ/!UQ), "
-				"!UQ wait!%S for a range, !UQ group fdatasync!%S for !UQ write!%S"),
+				"!UQ wait!%S for a range, !UQ group fdatasync!%S for !UQ write!%S, !UQ ZERO!%S (!UQ as zeros written)"),
 	$MHREC(MH$_IOSTUCK,	"IOSTUCK, !AZ of unit !AZ, LBN !UL, is in the backend for !UL seconds: cancelled"),
 	$MHREC(MH$_DEVBUSY,	"DEVBUSY, the device !AZ is in use: mounted on this host, or another server has it"),
 	$MHREC(MH$_NODESTATS,	"NODESTATS, node !AZ (!UL): channel !AZ, open !UL time!%S; virtual circuit !AZ, open !UL time!%S; !UL connection!%S open"),

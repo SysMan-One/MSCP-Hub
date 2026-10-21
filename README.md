@@ -12,7 +12,7 @@ has no votes.
   run as a service, troubleshoot, step by step.
 - Manual page: `man 8 mscphub`. Help library: `mscphub /HELP`; sources in
   `doc/mscphublib.md` (EN) and `doc/mscphublib_ru.md` (RU).
-- Version: X01-14.
+- Version: X01-15.
 
 What it does: up to 8 disks per server (files or block devices, 512 or 4096-octet
 sectors, read-only units such as a CD image), READ, WRITE, ERASE and COMPARE over

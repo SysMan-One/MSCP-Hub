@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BK"
-#define	__IDENT__	"X01-14"
-#define	__REV__		"1.14.0"
+#define	__IDENT__	"X01-15"
+#define	__REV__		"1.15.0"
 
 /*
 **++
@@ -31,6 +31,8 @@
 **						512 sectors written.
 **		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
+**		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
+**						fallocate (unwritten extents); BKSTATS counts ZERO.
 **
 **--
 */
@@ -40,6 +42,9 @@
 #include	<string.h>
 #include	<fcntl.h>
 #include	<unistd.h>
+#include	<sys/ioctl.h>
+#include	<linux/fs.h>
+#include	<linux/fiemap.h>
 
 #include	"mh_def.h"
 
@@ -138,6 +143,48 @@ static	int	s_t$wait	(
 		mh$bk_wait(a_port, 10);
 
 	return	s_given >= a_n;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Is any of a range of a file unwritten (allocated, reads as zeros:
+**	fallocate)?  A file system without FIEMAP (tmpfs) says no.
+**
+**  RETURN VALUE:
+**	1 - an unwritten extent is there; 0 - none.
+**--
+*/
+static	int	s_t$unwritten	(
+		int		a_fd,
+		uint64_t	a_off,
+		uint64_t	a_len
+			)
+{
+struct	{
+	struct fiemap		map;
+	struct fiemap_extent	ext [32];
+	} l_fm;
+
+	memset(&l_fm, 0, sizeof(l_fm));
+	l_fm.map.fm_start		= a_off;
+	l_fm.map.fm_length		= a_len;
+	l_fm.map.fm_flags		= FIEMAP_FLAG_SYNC;
+	l_fm.map.fm_extent_count	= 32;
+
+	if ( ioctl(a_fd, FS_IOC_FIEMAP, &l_fm.map) )
+		return	0;
+
+	for ( unsigned i = 0; i < l_fm.map.fm_mapped_extents; i++ )
+		{
+		if ( l_fm.ext[i].fe_flags & FIEMAP_EXTENT_UNWRITTEN )
+			return	1;
+		}
+
+	return	0;
 }
 
 
@@ -249,7 +296,7 @@ int			l_fd, l_ok;
 	memset(s_want + 32768, 0, 8192);
 	s_t$submit(&s_req[3], &s_d4k, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 32768, 8192, NULL);
 	$CHECK(s_t$wait(&s_port, 4) && !s_req[2].err && !s_req[3].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0))
-		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 10), "4096: ERASE of 1024 at 4608 (RMW), of 8192 at 32768 (fallocate)");
+		&& !memcmp(s_got, s_want, T$K_IMGSZ) && (s_d4k.nrmw == 10), "4096: ERASE of 1024 at 4608 (RMW), of 8192 at 32768 (zeros written)");
 
 	/*
 	**  4096: the reads of the first and of the last sector go at once - a
@@ -271,7 +318,7 @@ int			l_fd, l_ok;
 
 	/*
 	**  4096, the cache: a write of a whole sector puts its new data there,
-	**  an RMW over it after takes that; an ERASE by fallocate drops a
+	**  an RMW over it after takes that; an ERASE drops a
 	**  sector, an RMW over it after reads the zeros from the disk
 	*/
 	s_given = 0;
@@ -354,6 +401,28 @@ int			l_fd, l_ok;
 	$CHECK(l_ok && (s_d512.nsyncw == 24) && (l_n >= 1) && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
 		"GROUP: 24 WRITEs, every one on the file, fewer fdatasync than writes");
 	printf("T_BK: group commit - %u fdatasync for 24 writes\n", l_n);
+
+	/*
+	**  ERASE of a file: up to MH$K_BK_ZFILLMAX zeros are written, so no
+	**  unwritten extent is left behind; a bigger one is fallocate
+	*/
+	s_given = 0;
+	memset(l_buf[0], 0xC5, 8192);
+	s_t$submit(&s_req[0], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 262144, 8192, l_buf[0]);
+	l_ok = s_t$wait(&s_port, 1) && !s_req[0].err;
+	s_t$submit(&s_req[1], &s_d512, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 262144 + 512, 4096, NULL);
+	l_ok = l_ok && s_t$wait(&s_port, 2) && !s_req[1].err;
+	memset(s_want, 0xC5, 8192);
+	memset(s_want + 512, 0, 4096);
+	l_fd = open(l_img, O_RDONLY);
+	$CHECK(l_ok && (8192 == pread(l_fd, s_got, 8192, 262144)) && !memcmp(s_got, s_want, 8192) && (s_d512.nzero == 1) && (s_d512.nzfill == 1)
+		&& !s_t$unwritten(l_fd, 262144, 8192), "ERASE of 4096 of a file: zeros written, no unwritten extent");
+
+	s_t$submit(&s_req[2], &s_d512, MH$K_BK_ZERO, MH$K_SYNC_DSYNC, 0, MH$K_BK_ZFILLMAX + 512, NULL);
+	memset(s_want, 0, T$K_IMGSZ);
+	$CHECK(s_t$wait(&s_port, 3) && !s_req[2].err && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ)
+		&& (s_d512.nzero == 2) && (s_d512.nzfill == 1), "ERASE over MH$K_BK_ZFILLMAX of a file: fallocate, zeros");
+	close(l_fd);
 
 	unlink(l_img);
 	unlink(l_img4);

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBK"
-#define	__IDENT__	"X01-14"
-#define	__REV__		"1.14.0"
+#define	__IDENT__	"X01-15"
+#define	__REV__		"1.15.0"
 
 /*
 **++
@@ -28,7 +28,8 @@
 **				end together - one fdatasync for many
 **			  NONE	/UNSAFE: the page cache, for tests only
 **		  ZERO	fallocate(ZERO_RANGE | KEEP_SIZE), zeros written where
-**			the device does not have it; never DISCARD
+**			the device does not have it and to a file up to
+**			MH$K_BK_ZFILLMAX; never DISCARD
 **
 **		A device whose sector is over 512 octets (a 4K disk) takes a
 **		request that is not on whole sectors through a bounce buffer
@@ -61,6 +62,8 @@
 **						512 sectors written.
 **		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
+**		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
+**						fallocate (unwritten extents); BKSTATS counts ZERO.
 **
 **--
 */
@@ -970,6 +973,22 @@ int		l_head, l_tail;
 		if ( a_req->op == MH$K_BK_WRITE )
 			memcpy(a_req->bounce + (a_req->off - a_req->aoff), a_req->buf, a_req->len);
 		else	memset(a_req->bounce + (a_req->off - a_req->aoff), 0, a_req->len);
+		}
+
+	/*
+	**  A ZERO of a file, not too big: zeros written.  fallocate would
+	**  leave unwritten extents (ext4), and every write into one after
+	**  costs a commit of the journal of the file system
+	*/
+	if ( a_req->op == MH$K_BK_ZERO )
+		{
+		l_dev->nzero++;
+
+		if ( (a_req->stage == MH$K_BKS_IO) && !a_req->bounce && (l_dev->type == MH$K_DEV_FILE) && (a_req->len <= MH$K_BK_ZFILLMAX) )
+			{
+			a_req->stage = MH$K_BKS_ZFILL;
+			l_dev->nzfill++;
+			}
 		}
 
 	return	s_mh$bk_step(a_req);

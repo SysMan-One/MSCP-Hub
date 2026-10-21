@@ -584,8 +584,9 @@ sector), how many sectors they needed first, how many of those came
 out of the cache of the 128 sectors last written instead of the disk,
 and how many were among the last 2, 16, 128 and 512 written (what a
 cache of that size would save), how many writes waited for another one on the same sectors,
-and with /SYNC=GROUP how many flushes covered how many writes. No
-action.
+with /SYNC=GROUP how many flushes covered how many writes, and how
+many ERASE commands came (ZERO) and how many of them were done by
+writing zeros to a file. No action.
 
 ### LATSTATS
 

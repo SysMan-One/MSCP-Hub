@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMSCP"
-#define	__IDENT__	"X01-14"
-#define	__REV__		"1.14.0"
+#define	__IDENT__	"X01-15"
+#define	__REV__		"1.15.0"
 
 /*
 **++
@@ -79,6 +79,8 @@
 **						512 sectors written.
 **		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
+**		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
+**						fallocate (unwritten extents); BKSTATS counts ZERO.
 **
 **--
 */
@@ -533,7 +535,7 @@ unsigned	l_hosts, l_wait;
 
 		l_status = $MHMSG(MH$_BKSTATS, l_unit->dvname, l_unit->dev.ssz, l_unit->dev.nrmw, l_unit->dev.nedge, l_unit->dev.ncache, l_unit->dev.nedgehit[0],
 			l_unit->dev.nedgehit[1], l_unit->dev.nedgehit[2], l_unit->dev.nedgehit[3], l_unit->dev.nlockwait, l_unit->dev.nsync,
-			l_unit->dev.nsyncw);
+			l_unit->dev.nsyncw, l_unit->dev.nzero, l_unit->dev.nzfill);
 
 		for ( unsigned j = 0; j < MH$K_LAT_N; j++ )
 			{
