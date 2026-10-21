@@ -581,7 +581,7 @@ is on disk. Action: do not use it with data you need.
 One for each disk, written after its UNITSTATS: the sector of the
 disk, how many writes were done as read-modify-write (a 4096-octet
 sector), how many sectors they needed first, how many of those came
-out of the cache of the 16 sectors last written instead of the disk,
+out of the cache of the 128 sectors last written instead of the disk,
 and how many were among the last 2, 16, 128 and 512 written (what a
 cache of that size would save), how many writes waited for another one on the same sectors,
 and with /SYNC=GROUP how many flushes covered how many writes. No

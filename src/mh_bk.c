@@ -59,7 +59,7 @@
 **						last write of the disk had.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
-**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
 **
 **--

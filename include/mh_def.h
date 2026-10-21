@@ -52,7 +52,7 @@
 **						sectors an RMW reads.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
-**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
 **
 **--
@@ -466,7 +466,7 @@ typedef struct mh_bkreq_t {
 */
 #define	MH$K_BK_LRU		512		/* The model of a cache: sectors at most	*/
 #define	MH$K_BK_LRUN		4		/* ... and its sizes: 2, 16, 128, 512		*/
-#define	MH$K_BK_CACHE		16		/* Sectors last written, kept for the RMW	*/
+#define	MH$K_BK_CACHE		128		/* Sectors last written, kept for the RMW	*/
 
 typedef struct mh_bkdev_t {
 	int		fd;			/* -1 - not open				*/

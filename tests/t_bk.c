@@ -29,7 +29,7 @@
 **		20-OCT-2026	RRL	X01-13 : the sectors an RMW reads, the ones last written.
 **		20-OCT-2026	RRL	X01-14 : BKSTATS: a model of a cache of the last 2, 16, 128,
 **						512 sectors written.
-**		20-OCT-2026	RRL	X01-14 : a cache of the 16 sectors last written: an RMW
+**		20-OCT-2026	RRL	X01-14 : a cache of the 128 sectors last written: an RMW
 **						reads only the edges it does not find there.
 **
 **--
@@ -301,6 +301,34 @@ int			l_fd, l_ok;
 	l_ok = l_ok && s_t$wait(&s_port, 5) && !s_req[4].err && (s_d4k.ncache == l_size);
 	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
 		"4096 cache: an ERASE drops a sector, an RMW over it after reads the disk, no stale data");
+
+	/*
+	**  4096, the cache is full: 128 sectors more written one by one push
+	**  out the oldest - an RMW over 81920 reads the disk, over the last of
+	**  them takes the cache
+	*/
+	s_given = 0;
+	l_ok = 1;
+
+	for ( unsigned i = 0; l_ok && (i < MH$K_BK_CACHE); i++ )
+		{
+		memset(l_buf[0], (int) (0x60 + (i & 0x1F)), 4096);
+		memcpy(s_want + 524288 + i * 4096, l_buf[0], 4096);
+		s_t$submit(&s_req[0], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 524288 + i * 4096, 4096, l_buf[0]);
+		l_ok = s_t$wait(&s_port, i + 1) && !s_req[0].err;
+		}
+
+	l_size = s_d4k.ncache;
+	memset(l_buf[1], 0x45, 512);
+	memcpy(s_want + 81920 + 2048, l_buf[1], 512);
+	s_t$submit(&s_req[1], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, 81920 + 2048, 512, l_buf[1]);
+	l_ok = l_ok && s_t$wait(&s_port, MH$K_BK_CACHE + 1) && !s_req[1].err && (s_d4k.ncache == l_size);
+	memset(l_buf[2], 0x46, 512);
+	memcpy(s_want + T$K_IMGSZ - 1024, l_buf[2], 512);
+	s_t$submit(&s_req[2], &s_d4k, MH$K_BK_WRITE, MH$K_SYNC_DSYNC, T$K_IMGSZ - 1024, 512, l_buf[2]);
+	l_ok = l_ok && s_t$wait(&s_port, MH$K_BK_CACHE + 2) && !s_req[2].err && (s_d4k.ncache == l_size + 1);
+	$CHECK(l_ok && (T$K_IMGSZ == pread(l_fd, s_got, T$K_IMGSZ, 0)) && !memcmp(s_got, s_want, T$K_IMGSZ),
+		"4096 cache: full, the oldest sector is pushed out, the newest is kept, the data is right");
 	close(l_fd);
 
 	/*
