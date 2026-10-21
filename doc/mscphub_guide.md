@@ -1,6 +1,6 @@
 # MSCPHUB User's Guide
 
-Version X01-09 (v1). StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan).
+Version X01-15. StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan).
 
 MSCPHUB is a program for Linux. It gives disks to OpenVMS computers on the
 same network. The OpenVMS computer sees a new disk, for example
@@ -110,6 +110,20 @@ A new empty file of 2 GB:
 # mkdir -p /srv/mscphub
 # truncate -s 2G /srv/mscphub/dka100.img
 ```
+
+Such a file is sparse: it takes no space yet, and the first write to
+every part of it is slower. For a disk that must be fast, write the
+file full once instead:
+
+```
+# dd if=/dev/zero of=/srv/mscphub/dka100.img bs=1M count=2048
+```
+
+Put the files on ext4 or XFS: the server reads and writes them with
+direct I/O, as a block device. On a file system without it (tmpfs of an
+old kernel, some network file systems) it uses the page cache and says
+`NODIRECT`; it works, but every write costs more. A partition or an LVM
+volume is still a little faster than a file.
 
 A block device - a whole disk, a partition, an LVM volume, a loop device,
 an iSCSI LUN - must not be mounted or used by Linux. The server takes it
@@ -238,6 +252,7 @@ Read the last messages of the journal. Every message has a severity letter:
 | `F-IDCLASH`, `F-NAMECLASH` | choose another `/SYSTEMID` or `/NODE` |
 | `F-DEVBUSY` | the device is mounted or used on Linux |
 | `W-MISALIGN` | the partition does not start on a physical sector: make a new one on 1 MB |
+| `I-NODIRECT` | the file system of the file has no direct I/O: move the file to ext4 or XFS |
 | `%UTILS-E: ... Skip unrecognized option` | a misspelled parameter: it is NOT used, the server runs without it |
 | no `NEWNODE` | the cable, the VLAN or bridge, `/GROUP`; `tcpdump -i eth1 ether proto 0x6007` |
 | `W-AUTHFAIL` | `/AUTHORIZE` is not the hash of the cluster password |
