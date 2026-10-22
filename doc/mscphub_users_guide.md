@@ -1670,7 +1670,43 @@ computer and the node at the other end. The same BACKUP/VERIFY takes 30.7 second
 /SYNC=NONE and 34.0 to 34.8 on a partition instead of a file: what remains is the price of a durable
 write on a consumer SSD. An SSD with power-loss protection removes most of it.
 
-## C.5 Reading These Numbers
+## C.5 The Server on Another Computer
+
+The server need not run on the computer of the nodes. In this test it ran on a second Linux computer
+and served a copy of an OpenVMS system disk to the same emulated nodes:
+
+| Item | Configuration |
+|---|---|
+| Linux computer of the server | Intel Xeon E5-2697 v4 at 2.3 GHz, turbo off; Samsung SSD 970 EVO Plus (NVMe) with ext4 |
+| LAN | 1 Gb/s Ethernet between the two computers; a VXLAN tunnel joins the bridge of the nodes to a bridge of the server |
+| MSCPHUB | Version X01-19ECO1, /SYNC=DSYNC, /ACK=HOLD; the disk is an image file of 16 GB, a copy of the system disk of a node |
+
+Two jobs on one node copied a file of 1.6 MB to the disk and compared every copy with its original,
+without a pause, for 30 minutes, 22-OCT-2026. The collector of T4 recorded the server every minute:
+
+| Measure | Value |
+|---|---|
+| Rounds | 2 898 and 2 896, 0 errors |
+| I/O operation rate | 510 to 550 a second, steady from the first minute to the last |
+| Throughput | 15 MB a second: 10 MB read by the node, 5 MB written |
+| Queue length | 1.15 to 1.23 |
+| Response time | 2.2 to 2.3 ms |
+| Commands | 753 867 READ (18.9 GB), 191 927 WRITE (9.4 GB) |
+| Transport | 14.8 million packets sent, 0 retransmitted, 0 duplicates |
+| `ANALYZE/DISK_STRUCTURE` | No error the load made: it reports only two files marked for delete, which the disk copied already had |
+
+LATSTATS of the same run:
+
+| Command | Average | The Linux disk | The LAN and the node | The server itself |
+|---|---|---|---|---|
+| READ | 1 639 µs | 235 µs | 1 401 µs | 1 µs |
+| WRITE | 4 650 µs | 2 033 µs | 2 614 µs | 2 µs |
+
+Across two computers and a tunnel the server itself still takes one or two microseconds of a
+command. The way through the LAN and the tunnel costs about a millisecond more than the bridge of
+C.1, and the durable write on that SSD two milliseconds.
+
+## C.6 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the
