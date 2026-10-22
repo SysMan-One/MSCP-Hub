@@ -2,10 +2,10 @@
 
 ## Programmer's Guide
 
-    Order Number:       MSCPHUB-PG-0116
-    Software Version:   MSCPHUB Version X01-16
+    Order Number:       MSCPHUB-PG-0117
+    Software Version:   MSCPHUB Version X01-17
     Operating System:   Linux
-    Revision/Update:    This is a new manual.
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-16.
     Date:               22-OCT-2026
 
 ---
@@ -81,10 +81,15 @@ state transitions and the quorum, and could hang the cluster by a fault of its o
 that only serves disks needs none of it. The server tells OpenVMS that it is not an OpenVMS system,
 and OpenVMS then treats it as it treats an HSC.
 
-**One process, one thread.** The protocol, from the frame up to MSCP, runs in one thread on an EPOLL
-loop. Nothing is locked, because nothing else touches the state. This is a real constraint on what
-may be added: anything that blocks the loop stops every node. The disk I/O is therefore never done in
-the loop; it goes to io_uring, and its completions come back as an event of the loop.
+**One process, one protocol thread.** The protocol, from the frame up to MSCP, runs in one thread on
+an EPOLL loop. Nothing is locked, because nothing else touches the state. This is a real constraint on
+what may be added: anything that blocks the loop stops every node. The disk I/O is therefore never
+done in the loop; it goes to io_uring, and its completions come back as an event of the loop.
+
+**What others read is a copy.** Every 100 ms the protocol thread copies its state and counters into
+a block in shared memory, under a sequence lock: MHMON in another process and the Modbus thread in
+this one read whole copies of it, and neither ever waits for the protocol thread, nor it for them.
+The Modbus thread is the only other thread of the server, and it touches nothing but the copy.
 
 **The answer to a WRITE means that the data is on the medium.** OpenVMS never asks a disk to flush a
 cache of its own. A server that answers a WRITE from the page cache would lose data that OpenVMS
@@ -112,7 +117,8 @@ server carries no general-purpose code of its own.
 * **No cache of data in the server.** The data of a READ comes from the Linux disk, and the page
   cache of Linux is not relied upon for a WRITE. The one exception is the cache of the sectors last
   written on a disk of 4096-octet sectors, which only spares the reads of a read-modify-write.
-* **No threads.** The backend is io_uring, not a pool of threads.
+* **No threads in the protocol.** The backend is io_uring, not a pool of threads; the one other thread
+  serves Modbus out of the published copy.
 * **No fallback for old kernels.** io_uring and the other interfaces of the kernels of the last five
   years are required; there is no second path for an older kernel.
 
@@ -137,10 +143,14 @@ Bottom up:
 | `mh_bk.c` | Backend | The disk I/O of the units, by io_uring |
 | `mh_utl.c` | Services | The message catalogue, the OpenVMS time, conversions |
 | `mh_hlp.c` | Help | `/HELP`, out of the help library |
+| `mh_stat.c` | Statistics | The block of state and counters in shared memory, and its reader |
+| `mh_mbus.c` | Modbus | The thread that serves the copy over Modbus/TCP |
 | `mscphub.c` | Head module | The parameters, the start-up checks, the event loop |
+| `mhmon.c` | MHMON | The monitor, an image of its own: the screens and the T4 files |
 
 The definitions they share are in `include/mh_def.h`; the formats of NISCA and of MSCP are in
-`include/nisca.h` and `include/mscp.h`.
+`include/nisca.h` and `include/mscp.h`; the layout of the statistics block, the interface between the
+server and MHMON, in `include/mh_stat.h`.
 
 ## 2.2 The Event Loop
 
@@ -149,7 +159,7 @@ The definitions they share are in `include/mh_def.h`; the formats of NISCA and o
 | Source | Event |
 |---|---|
 | The LAN socket | Frames: drained, each given to `mh$cc_input`; then the acknowledgements owed go (`mh$tr_flush`) |
-| A TIMERFD of 20 ms | The tick of the protocol: `mh$cc_tick` (HELLO, timers of the channels and circuits), `mh$bk_tick` (stuck requests) |
+| A TIMERFD of 20 ms | The tick of the protocol: `mh$cc_tick` (HELLO, timers of the channels and circuits), `mh$bk_tick` (stuck requests), `mh$stat_tick` (the queues; the copy every fifth tick) |
 | The EVENTFD of io_uring | Disk completions: `mh$bk_reap` |
 | A SIGNALFD | SIGINT and SIGTERM stop the server; SIGUSR1 writes the state |
 
@@ -267,6 +277,32 @@ of hexadecimal and MAC address notations.
 `MSCPHUB_HELPLIB`, in the installed tree, beside the image, and where the build put it. Built
 without the HELP package, the server answers `/HELP` by a short summary.
 
+## 3.12 mh_stat.c
+
+The statistics block, `/dev/shm/mscphub.`*node*, mode 0640, made when the server starts and removed
+when it stops. `mh$stat_tick` adds the queue of every unit to its sum on every tick, and every fifth
+tick copies the state in: SEQ is made odd, the copy is made, SEQ is made even. `mh$stat_read` is the
+reader of both MHMON and Modbus: it copies the block between two reads of SEQ and takes the copy only
+when SEQ was even and did not change; it refuses a block of another MAGIC, VERSION or SIZE. A block
+that cannot be made is `NOSTAT`, a warning.
+
+## 3.13 mh_mbus.c
+
+The Modbus/TCP server: `mh$mbus_start` binds and listens in the protocol thread, so that a wrong
+`/MODBUS` is said at start-up, then starts the thread with every signal blocked. The thread polls the
+listening socket, at most 8 clients and an EVENTFD that stops it. `mh$mbus_answer` takes a whole copy
+of the block for every request, lays it out as the registers of the map (User's Guide, Appendix D)
+and answers 03, 04 and 2B/0E; anything else is an exception.
+
+## 3.14 mhmon.c
+
+MHMON, an image of its own linked with the same library. It maps the block read only, takes a copy
+every `/INTERVAL` on the boundaries of the clock, and works out the rates from the differences of two
+copies over the time the server stamped on them. A copy of another PID or start time starts the
+statistics afresh; a PID that is gone unmaps the block, and MHMON maps it again when the server is
+back. The screens are made with FAO into a buffer and written at once. The T4 file is written row by
+row; its columns are fixed when it is begun, and a node or a disk is found by its name.
+
 ---
 
 # Chapter 4
@@ -288,11 +324,17 @@ All are declared in `include/mh_def.h`.
 | `MH$BKDEV` | The backend side of a unit: the descriptors, the sector, the cache of written sectors |
 | `MH$BKREQ` | A request to the backend |
 | `MH$LAT` | The time counters of one operation of a unit |
+| `MH$STAT` | The statistics block: who the server is, its counters, its nodes and units (`mh_stat.h`) |
+| `MH$STNODE`, `MH$STUNIT` | A node and a unit in the block |
 
 The ownership is simple, because there is one thread: a structure belongs to the layer that
 declares its state, and a lower layer never frees what an upper one holds. A command in progress
 (`MH$HRB`) outlives its connection when the disk still has a request of it; it is freed when the
 backend gives the request back.
+
+`MH$STAT` is an interface between two images, and is laid out as one: every field has its size in its
+type, there are no pointers, and `MH$K_STAT_VERSION` is raised by any change of the layout. MHMON
+refuses a block of another version (`STATVERS`).
 
 ---
 
@@ -516,7 +558,17 @@ moves data has steps in `mh_mscp.c` and a request type in `mh_bk.c`. Every new e
 the check that holds back an answer a node would crash on; extend the check if the new message has
 fields it does not know.
 
-## 6.4 Releasing a Version
+## 6.4 Adding a Counter to MHMON and Modbus
+
+1. Add the field to `MH$STAT`, `MH$STUNIT` or `MH$STNODE` in `mh_stat.h`, and raise
+   `MH$K_STAT_VERSION`.
+2. Copy it in `mh$stat_tick` or its helpers in `mh_stat.c`.
+3. For MHMON: an item or a row in `mhmon.c`, and its column in the T4 file.
+4. For Modbus: a register in `s_mh$mb_layout` in `mh_mbus.c`, at a place of the map not taken; raise
+   `MH$K_MB_MAPVERS` if a register moves.
+5. Document it: the User's Guide, Section 4.8 or Appendix D, in both languages.
+
+## 6.5 Releasing a Version
 
 1. Raise `__IDENT__` and `__REV__` of the head module, and of every module changed.
 2. Add a line to the modification history of every file changed.
@@ -591,8 +643,10 @@ not in the kit.
 | `scs` | SCS and the directory; the MSCP server: STCON, GET UNIT STATUS, ONLINE, AVAILABLE, the checks of a command, credits |
 | `blk` | READ, WRITE, COMPARE and ERASE over the block transfers; the order of the commands; ABORT; a connection that goes while the disk has a command |
 | `bk` | The backend: io_uring, read-modify-write, ranges of sectors, the cache of written sectors, ERASE, group commit, direct I/O |
+| `stat` | The statistics block: made, copied every 100 ms, never a torn copy under a writer in another thread, another layout refused, the queues; the answers of Modbus |
+| `t4` | MHMON records a published block: the header of T4, the same fields in every row, the rate of a unit |
 | `params` | The checks of the qualifiers |
-| `docs` | Every qualifier and every message is documented |
+| `docs` | Every qualifier of the server and of MHMON and every message is documented |
 | `helplib` | `/HELP` answers out of the library (with the HELP package) |
 
 ## 8.2 Rules
@@ -611,6 +665,7 @@ not in the kit.
 |---|---|
 | 8 disks per server | `/UNIT0` to `/UNIT7` in `s_opts`, `mscphub.c` |
 | One LAN adapter | `mh_lan.c` |
+| 8 Modbus clients at a time | `mh_mbus.c` |
 | 64 nodes remembered | `mh_cc.c`, `MANYNODES` |
 | Window of 16 packets per circuit | `mh_tr.c` |
 | No member disk of a shadow set (no forced error) | `mh_mscp.c` |

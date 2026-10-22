@@ -21,12 +21,21 @@ and manuals in the manner of OpenVMS.
 - Both as PDF beside them (`-DMH_PDF=ON` renders them again; needs pandoc and XeLaTeX).
 - Manual page: `man 8 mscphub`. Help library: `mscphub /HELP`; sources in
   `doc/mscphublib.md` (EN) and `doc/mscphublib_ru.md` (RU).
-- Version: X01-16.
+- Monitor: `mhmon [DISK|NODES|SERVER|ALL]` shows the disks, who has them online, the nodes
+  and the counters as the MONITOR utility of OpenVMS does; `/RECORD` writes T4 style CSV for
+  TLViz, `mscphub-t4.service` records every minute. `/MODBUS=port` serves the counters over
+  Modbus/TCP.
+- Version: X01-17.
+
+Small: no database, no interpreter, no framework - the server is about 240 KB and runs in a few
+megabytes, so the hub of a home VMScluster can be a Raspberry Pi or a NaPi-C board (RK3308,
+https://github.com/napilab/napi-boards), where the kit builds and passes all its tests.
 
 What it does: up to 8 disks per server (files or block devices, 512 or 4096-octet
 sectors, read-only units such as a CD image), READ, WRITE, ERASE and COMPARE over
 the block transfers of NISCA, io_uring disk I/O with `fdatasync` before a WRITE is
-answered, a systemd unit, its counters on SIGUSR1.
+answered, a systemd unit, its counters on SIGUSR1, in MHMON, in T4 files and over
+Modbus/TCP.
 
 ## Build and install
 

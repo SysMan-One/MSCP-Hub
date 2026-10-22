@@ -2,10 +2,10 @@
 
 ## User's Guide
 
-    Order Number:       MSCPHUB-UG-0116
-    Software Version:   MSCPHUB Version X01-16
+    Order Number:       MSCPHUB-UG-0117
+    Software Version:   MSCPHUB Version X01-17
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-15.
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-16.
     Date:               22-OCT-2026
 
 ---
@@ -46,16 +46,17 @@ This manual contains the following chapters and appendixes:
 
 | Part | Contents |
 |---|---|
-| Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do |
+| Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do, the small computers it runs on |
 | Chapter 2 | Installing the server |
 | Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
-| Chapter 4 | Running the server and using its disks on OpenVMS |
-| Chapter 5 | Contains the command dictionary: the `mscphub` command and all its qualifiers |
+| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus |
+| Chapter 5 | Contains the command dictionary: the `mscphub` and `mhmon` commands and all their qualifiers |
 | Chapter 6 | Describes the format of a message and lists every message with what to do about it |
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
 | Appendix A | Lists the files installed and used |
 | Appendix B | Lists the limits of the server |
 | Appendix C | Gives the results of measurements of the server |
+| Appendix D | Gives the map of the Modbus registers |
 
 The reader who installs the server for the first time wants Chapters 2, 3 and 4, in that order. The
 reader who holds a message wants Chapter 6, and the one who holds a symptom, Chapter 7.
@@ -145,6 +146,22 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 
 MSCPHUB is verified with OpenVMS Alpha Version 8.3. Other versions that cluster over the LAN with
 PEDRIVER are expected to work.
+
+## 1.6 Small Computers
+
+MSCPHUB needs little: the C library, liburing, the StarLet package and a kernel of the last five
+years - no database, no interpreter, no framework. The server is about 240 KB, MHMON about 150 KB,
+and a running server takes under 3 MB of memory, and its data buffers as the commands need them, at
+most 16 MB.
+
+So the hub of a home VMScluster can be a small board. The same kit builds and passes all its tests on
+a NaPi-C board of the NaPi World (https://github.com/napilab/napi-boards): a Rockchip RK3308, four
+Cortex-A35 cores, half a gigabyte of memory, Armbian. A Raspberry Pi or any other ARM board with a
+64-bit Linux will do as well. Put the images on a USB disk or an SSD rather than on the SD card: the
+server writes every block it is given before it answers.
+
+An emulated Alpha on a desktop computer, a NaPi in the corner serving its disks, and the cluster is
+complete - for the enthusiast, the way we like it.
 
 ---
 
@@ -470,12 +487,90 @@ CPUAffinity=3
 Back up an image file as you back up any disk: with the server stopped, or with the disk dismounted
 on all OpenVMS nodes. A copy of a file that a node is writing is not a consistent disk.
 
+## 4.8 Monitoring the Server
+
+MHMON shows what the server does, as the MONITOR utility of OpenVMS does. The server makes a copy of
+its state and counters every 100 ms in shared memory; MHMON reads it and never writes to it, so it
+can run at any time and as often as you like. Run it as root on the Linux computer of the server:
+
+```
+# mhmon
+```
+
+The class DISK is the default. For every disk it shows the name the nodes give it, the label of the
+volume, the nodes that have it online - that is, mounted or being mounted - and the item, with the
+value of the last interval (CUR) and the average, the least and the greatest since MHMON started:
+
+```
+                            MSCPHUB Monitor Utility
+                               DISK I/O STATISTICS
+                                 on server MHUB
+                             22-OCT-2026 14:32:29
+
+I/O Operation Rate                                 CUR      AVE      MIN      MAX
+
+$42$DKA100   MHUBTEST     ALPHA1,ALPHA2         377.33   396.56   377.33   416.66
+$42$DKA200   ALPHASYS     ALPHA1                  0.00     0.00     0.00     0.00
+$42$DKA300   ALPHA083     -                       0.00     0.00     0.00     0.00
+$42$DKA400   MHUB4K       ALPHA1,ALPHA2           0.00     0.00     0.00     0.00
+```
+
+`/ITEM` chooses what is shown: the operation rate, the throughput, the length of the queue, or the
+response time; `/ITEM=ALL` shows them in turn. The class NODES shows the nodes:
+
+```
+Node    System ID  Channel  Circuit  Opens  Connections  Disks  Commands Rate
+
+ALPHA1      65534  OPEN     OPEN         1            1      3           0.00
+ALPHA2      65533  OPEN     OPEN         1            1      2         296.50
+```
+
+and the class SERVER the frames, the transport and the data. `mhmon ALL` shows the three in turn.
+Press `Ctrl/C` to stop. Chapter 5 describes every qualifier.
+
+## 4.9 Recording the Counters in T4 Files
+
+T4 is the timeline collector of OpenVMS; TLViz and other tools draw its files. MHMON writes the
+counters of the server in the same T4 style CSV, so that they can be drawn with the same tools,
+beside the T4 data of the OpenVMS nodes.
+
+To record every minute, a file a day, enable the collector that is installed with the server:
+
+```
+# systemctl enable --now mscphub-t4
+```
+
+The files are in `/var/opt/mscphub/t4`, named as the files of T4: `T4_MHUB_22OCT2026_0000_2400.CSV`.
+The file of today ends in `_RUN` while it is being written. To record by hand:
+
+```
+# mhmon ALL /NODISPLAY /RECORD=/tmp/test.csv /INTERVAL=10 /ENDING=18:00
+```
+
+A file begins with four rows - the node, the date, the time of the start, the names of the columns -
+then has a row a sample: the time of the end of the sample, then the values. The columns are the
+rows of the class SERVER, four items of every disk, the commands of every node.
+
+## 4.10 Reading the Counters over Modbus/TCP
+
+A SCADA, a PLC panel or any Modbus client can read the counters of the server. Give the server a
+port:
+
+```
+/MODBUS=502
+```
+
+The server then answers the Modbus functions 03 and 04 (read registers) and 2B/0E (read the
+identification of the device). The counters come from the same copy MHMON reads, served by a thread
+of their own: a client never holds up the disks. Nothing can be written. Appendix D gives the map of
+the registers.
+
 ---
 
 # Chapter 5
 # Command Dictionary
 
-This chapter describes the `mscphub` command and each of its qualifiers.
+This chapter describes the `mscphub` and `mhmon` commands and each of their qualifiers.
 
 A qualifier is given on the command line or, one on a line, in the file of `/CONFIG`. `--`*NAME*`=`*value*
 may be written for `/`*NAME*`=`*value*. A qualifier the server does not know is passed over with a
@@ -581,6 +676,14 @@ severity F.
     Writes the messages to the file named. By default they go to the standard error, which systemd
     keeps in its journal.
 
+  **/MODBUS=**[*address*`:`]*port*
+
+    Serves the counters of the server over Modbus/TCP on the port named, and on the address named or
+    on every address of the computer. The registers are read with the functions 03 and 04, the
+    identification of the device with 2B/0E; nothing can be written. A thread of its own answers, out
+    of the copy of the counters the server makes every 100 ms. Without /MODBUS nothing is served.
+    Appendix D gives the map of the registers.
+
   **/NODE=***name*
 
     Specifies the SCSNODE of the server, 1 to 6 of the characters A-Z, 0-9, `$` and `_`. Required. It
@@ -665,6 +768,104 @@ for print; type it as one.)
 ```
 
 Displays the description of the message IDCLASH.
+
+---
+
+## MHMON
+
+Shows the state and the counters of the running server, and records them in T4 files.
+
+### Format
+
+      mhmon [DISK | NODES | SERVER | ALL] [/qualifier...]
+      mhmon /HELP[="topic..."]
+
+### Parameter
+
+  **class**
+
+    The class to show; any unique leading part of its name will do:
+
+    DISK - every disk: the label of the volume, the nodes that have it online, the item of /ITEM.
+    The default.
+
+    NODES - every node: its system ID, its channel and virtual circuit, the times the channel has
+    opened, its connections, the disks online to it, the MSCP commands it sends a second.
+
+    SERVER - frames, kilobytes, retransmissions, duplicate and out of order packets, data sent and
+    taken, commands in progress, data buffers.
+
+    ALL - the three in turn, one an interval.
+
+### Description
+
+MHMON reads the copy of the state and the counters that the server makes every 100 ms in shared
+memory, `/dev/shm/mscphub.`*node*, and never writes to it. Every /INTERVAL seconds it shows, for every
+item, the value of the last interval (CUR) and the average, the least and the greatest since it
+started (AVE, MIN, MAX). Rates are taken over the times the server has stamped on its copies.
+
+On a terminal the screen is drawn anew every interval; otherwise the screens follow one another, so
+the output can go to a file. A server that restarts starts the statistics afresh; one that stops is
+said on the screen, and MHMON waits for it.
+
+The label of a volume is read from the home block of the disk, every minute and whenever the nodes
+that have the disk online change. The file or the device is opened read only.
+
+Run MHMON as root, on the computer of the server.
+
+### Qualifiers
+
+  **/ENDING=***hh*`:`*mm*[`:`*ss*]
+
+    Specifies when MHMON stops: today, or tomorrow when the time is past. Without it MHMON runs until
+    `Ctrl/C` or SIGTERM.
+
+  **/INTERVAL=***seconds*
+
+    Specifies the seconds between two samples, 1 to 3600. The samples fall on the boundaries of the
+    interval of the clock: with /INTERVAL=60, on the minute. The default is 3.
+
+  **/ITEM=**{`OPERATION_RATE` | `THROUGHPUT` | `QUEUE_LENGTH` | `RESPONSE_TIME` | `ALL`}
+
+    Specifies what the class DISK shows: commands a second; kilobytes a second; the average number of
+    commands running and waiting, taken every 20 ms; the average time from a command to its answer,
+    in milliseconds. ALL shows them in turn. The default is /ITEM=OPERATION_RATE.
+
+  **/NODE=***name*
+
+    Specifies the SCSNODE of the server to watch, when several servers run on the computer. Without it
+    MHMON takes the only one there is.
+
+  **/NODISPLAY**
+
+    Nothing is shown; MHMON only records. /RECORD is required with it.
+
+  **/RECORD=***file-spec* | *directory*
+
+    Writes the values of every interval to a file of the T4 style (Section 4.9). The file is written
+    row by row, as the samples are taken. A directory gets a file a day,
+    `T4_`*node*`_`*date*`_`*start*`_`*end*`.CSV`; the file being written ends in `_RUN`. A recording
+    waits for a server that does not run, and leaves the fields of such samples empty.
+
+### Examples
+
+```
+# mhmon NODES
+```
+
+Shows the nodes of the server every 3 seconds.
+
+```
+# mhmon DISK /ITEM=ALL /INTERVAL=5
+```
+
+Shows the four items of the disks in turn, every 5 seconds.
+
+```
+# mhmon ALL /NODISPLAY /RECORD=/var/opt/mscphub/t4 /INTERVAL=60
+```
+
+Records every minute, a file a day, as the unit `mscphub-t4.service` does.
 
 ---
 
@@ -890,6 +1091,25 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* Report it.
 
+**MANYSERVERS**, error
+
+    *n* MSCPHUB servers run on this host: give /NODE
+
+    *Explanation:* MHMON has found the statistics of several servers on the computer and does not know which one to
+    show.
+
+    *User Action:* Give MHMON the SCSNODE of the server: /NODE=*name*.
+
+**MBUSERR**, warning
+
+    the counters are not served over Modbus/TCP: *call* failed, errno=*n* (*text*)
+
+    *Explanation:* /MODBUS is given, but the server cannot serve the counters there: most often the port is in use by
+    another program (`bind`, errno=98) or the address is not of this computer (`bind`, errno=99). The
+    server serves its disks without it.
+
+    *User Action:* Give another port or address in /MODBUS, or stop the program that has the port.
+
 **MISALIGN**, warning
 
     *device* starts *n* octets into a physical sector of *n*: every write is a read-modify-write of the disk
@@ -900,6 +1120,14 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* For a new disk, make the partition start on a multiple of 1 MB (`parted` and `fdisk`
     do so by default) and copy the data over.
+
+**MODBUS**, information
+
+    the counters are served over Modbus/TCP on *address*, port *n*
+
+    *Explanation:* The server answers Modbus/TCP requests for its counters (/MODBUS, Section 4.10).
+
+    *User Action:* None.
 
 **MSCPERR**, error
 
@@ -965,6 +1193,24 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* Add it.
 
+**NOSERVER**, error
+
+    no MSCPHUB server runs on this host*text*
+
+    *Explanation:* MHMON has found no statistics of a server: no server runs on this computer, or not the one /NODE
+    names, or MHMON is not run as root. With /RECORD, MHMON waits for the server.
+
+    *User Action:* Start the server (`systemctl start mscphub`); check /NODE.
+
+**NOSTAT**, warning
+
+    no statistics for MHMON: *call* failed, errno=*n* (*text*)
+
+    *Explanation:* The server cannot make its statistics block in shared memory (`/dev/shm`). It serves its disks, but
+    MHMON and /MODBUS see nothing.
+
+    *User Action:* Check that `/dev/shm` is there and is not full (`df /dev/shm`).
+
 **NOTOPIC**, error
 
     sorry, no documentation on *topic*
@@ -972,6 +1218,14 @@ puts in; "(s)" stands for a plural ending.
     *Explanation:* /HELP names a topic the help library does not have.
 
     *User Action:* Give `mscphub /HELP` to see the topics.
+
+**RECORD**, information
+
+    recording every *n* second(s) to *file*
+
+    *Explanation:* MHMON has begun a file of /RECORD.
+
+    *User Action:* None.
 
 **SHUTDOWN**, information
 
@@ -999,6 +1253,15 @@ puts in; "(s)" stands for a plural ending.
     Dropped frames are frames of other groups or for other nodes; that is normal.
 
     *User Action:* None.
+
+**STATVERS**, error
+
+    the statistics of *name* are of version *n*, MHMON reads version *n*
+
+    *Explanation:* The server and MHMON are of different versions, and the layout of the statistics has changed between
+    them.
+
+    *User Action:* Use the MHMON installed with the server; install both from one kit.
 
 **SYSERR**, fatal
 
@@ -1184,7 +1447,18 @@ more. Check the switch, the bridge, the VLAN, the cables.
 `LATSTATS` shows where the time of a command goes: in the Linux disk (backend) or on the LAN
 (transfers).
 
-## 7.8 Collecting Information for a Report
+## 7.8 MHMON Shows Nothing
+
+| Message or sign | What to do |
+|---|---|
+| `E-NOSERVER` | Start the server; run MHMON as root; check /NODE |
+| `E-MANYSERVERS` | Give /NODE |
+| `E-STATVERS` | Use the MHMON of the same kit as the server |
+| `W-NOSTAT` in the log of the server | `/dev/shm` is missing or full |
+| "No MSCPHUB server runs ...; waiting for it" | The server has stopped; MHMON goes on when it comes back |
+| `W-MBUSERR` in the log of the server | The port of /MODBUS is in use, or the address is not of this computer |
+
+## 7.9 Collecting Information for a Report
 
 ```
 # systemctl kill -s USR1 mscphub
@@ -1202,10 +1476,14 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | File | Purpose |
 |---|---|
 | `/opt/mscphub/sbin/mscphub` | The server |
+| `/opt/mscphub/sbin/mhmon` | The monitor (Section 4.8) |
 | `/etc/opt/mscphub/mscphub.conf` | The parameter file of the service; yours, never overwritten |
 | `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
 | `/lib/systemd/system/mscphub.service` | The systemd unit |
 | `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
+| `/lib/systemd/system/mscphub-t4.service` | The collector of T4 files; not enabled |
+| `/dev/shm/mscphub.`*node* | The state and the counters of the running server, for MHMON and Modbus |
+| `/var/opt/mscphub/t4/` | The T4 files of the collector |
 | `/opt/mscphub/share/help/mscphub.hlb` | The help library, English |
 | `/opt/mscphub/share/help/ru/mscphub_ru.hlb` | The help library, Russian |
 | `/opt/mscphub/share/doc/mscphub/` | The manuals |
@@ -1233,6 +1511,8 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | Packets unacknowledged per circuit | 16 |
 | Time a disk command may take | 15 seconds, then IOSTUCK |
 | Retransmissions before a circuit fails | 30 |
+| Modbus/TCP clients at a time | 8 |
+| Copy of the counters for MHMON and Modbus | Every 100 ms |
 | LAN adapters | 1 |
 
 ---
@@ -1303,3 +1583,117 @@ write on a consumer SSD. An SSD with power-loss protection removes most of it.
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the
 same data, three kinds of disk.
+
+---
+
+# Appendix D
+# Modbus Register Map
+
+## D.1 Conventions
+
+With /MODBUS the server answers the Modbus/TCP functions 03 (Read Holding Registers) and 04 (Read
+Input Registers) with the same map, and 2B/0E (Read Device Identification). Every Unit Identifier is
+answered. At most 125 registers are read at a time; a register in the map that holds nothing reads 0;
+an address past the map is answered with the exception 02, ILLEGAL DATA ADDRESS.
+
+* A register is 16 bits.
+* A value of 32 bits takes two registers, a counter of 64 bits four; the high word comes first.
+* A text takes two characters a register, the first in the high octet, and is padded with zeros.
+* The counters only grow while the server runs, and start from 0 when it starts; a rate is the
+  difference of two readings over the time between them.
+* The values are those of the copy the server makes every 100 ms.
+
+The map has a version in register 0. A change of the map raises it.
+
+## D.2 The Server, from Register 0
+
+| Register | Size | Contents |
+|---|---|---|
+| 0 | 1 | Version of the map: 1 |
+| 1 | 1 | Number of disks |
+| 2 | 1 | Number of nodes the server knows |
+| 3 | 1 | /SYSTEMID |
+| 4 | 1 | /GROUP |
+| 5 | 1 | /ALLOCLASS |
+| 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
+| 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
+| 8 | 2 | Seconds since the server started |
+| 10 | 4 | Version of the server, text: X01-17 |
+| 14 | 4 | /NODE, text |
+| 18 | 8 | /INTERFACE, text |
+| 100 | 4 | Frames received |
+| 104 | 4 | Frames sent |
+| 108 | 4 | Octets received |
+| 112 | 4 | Octets sent |
+| 116 | 4 | Frames dropped (other groups, other nodes) |
+| 120 | 4 | Frames with a wrong cluster password |
+| 124 | 4 | Send errors |
+| 128 | 4 | Packets of the transport sent |
+| 132 | 4 | Packets of the transport received |
+| 136 | 4 | Packets retransmitted |
+| 140 | 4 | Duplicate packets received |
+| 144 | 4 | Packets received out of order |
+| 148 | 4 | Acknowledgements sent alone |
+| 152 | 4 | Chunks of data sent (READ) |
+| 156 | 4 | Octets of data sent |
+| 160 | 4 | Chunks of data taken (WRITE) |
+| 164 | 4 | Octets of data taken |
+| 168 | 4 | Octets of data buffers in use now |
+| 172 | 2 | Commands in progress now |
+
+## D.3 A Disk, from Register 1000 + 100 × n
+
+*n* is the number of the disk, 0 to 7, in the order of /UNIT0 to /UNIT7 that are given.
+
+| Offset | Size | Contents |
+|---|---|---|
+| 0 | 8 | Name on the nodes, text: $42$DKA100 |
+| 8 | 4 | Medium, text: RZ29 |
+| 12 | 1 | Bits: 0 - there is a disk, 1 - read only, 2 - a block device (not a file), 3 - direct I/O |
+| 13 | 1 | Sector of the Linux device, octets |
+| 14 | 2 | Size, blocks of 512 octets |
+| 16 | 1 | Number of nodes that have it online |
+| 17 | 1 | Commands running now |
+| 18 | 1 | Commands waiting for their turn now |
+| 20 | 4 | Nodes that have it online: bit *k* is node *k* of D.4 |
+| 24 | 4 | READ commands |
+| 28 | 4 | WRITE commands |
+| 32 | 4 | Octets read |
+| 36 | 4 | Octets written |
+| 40 | 4 | READ commands timed |
+| 44 | 4 | Their total time, microseconds |
+| 48 | 4 | WRITE commands timed |
+| 52 | 4 | Their total time, microseconds |
+| 56 | 4 | Sum of the queue (running and waiting), taken every 20 ms |
+| 60 | 4 | Number of times it was taken: the average queue is the difference of 56 over that of 60 |
+| 64 | 4 | Read-modify-writes (a disk of 4096-octet sectors) |
+| 68 | 4 | ERASE commands |
+
+The average response time of READ over an interval is the difference of offset 44 over that of
+offset 40.
+
+## D.4 A Node, from Register 2000 + 50 × n
+
+*n* is the number of the node, 0 to 63, in the order the server has seen them.
+
+| Offset | Size | Contents |
+|---|---|---|
+| 0 | 4 | SCSNODE, text |
+| 4 | 1 | SCSSYSTEMID, the low 16 bits |
+| 5 | 1 | Channel: 0 closed, 1 CCSTART sent, 2 VERF sent, 3 open, 4 HELLO taken |
+| 6 | 1 | Virtual circuit: 0 never started, 1 closed, 2 STACK sent, 3 open |
+| 7 | 1 | SCS connections open |
+| 8 | 1 | ... of them to the disk server |
+| 10 | 2 | Times the channel has opened |
+| 12 | 2 | Times the virtual circuit has opened |
+| 16 | 4 | MSCP commands taken on its connections now open |
+
+## D.5 Device Identification
+
+The function 2B/0E answers the basic objects:
+
+| Object | Name | Value |
+|---|---|---|
+| 0 | VendorName | StarLet Squad |
+| 1 | ProductCode | MSCPHUB |
+| 2 | MajorMinorRevision | X01-17 |
