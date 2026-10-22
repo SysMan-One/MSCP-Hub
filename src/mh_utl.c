@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-15"
-#define	__REV__		"1.15.0"
+#define	__IDENT__	"X01-17"
+#define	__REV__		"1.17.0"
 
 /*
 **++
@@ -13,7 +13,7 @@
 **		message catalogue, the OpenVMS time, conversions of the
 **		hexadecimal and MAC address notations.
 **
-**  DESCRIPTION: Diagnostics of interest to the developer go to $LOG with an
+**  DESCRIPTION: Diagnostics of interest to the developer go to $LOG_FAO with an
 **		explicit STS$K_* severity; those of interest to the operator
 **		are signalled by $MHMSG in the OpenVMS format, e.g.
 **
@@ -35,6 +35,7 @@
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
+**		22-OCT-2026	RRL	X01-17 : the messages of the statistics and of MHMON.
 **
 **--
 */
@@ -94,6 +95,13 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_LATSTATS,	"LATSTATS, unit !AZ, !AZ: !UQ command!%S, average !UQ us (backend !UQ, transfers !UQ, the rest !UQ), longest !UQ us; "
 				"under 0.1/0.3/1/3/10 ms and longer: !UQ/!UQ/!UQ/!UQ/!UQ/!UQ"),
 	$MHREC(MH$_NODIRECT,	"NODIRECT, !AZ: no direct I/O (!AZ), served through the page cache"),
+	$MHREC(MH$_NOSTAT,	"NOSTAT, no statistics for MHMON: !AZ failed, errno=!SL (!AZ)"),
+	$MHREC(MH$_NOSERVER,	"NOSERVER, no MSCPHUB server runs on this host!AZ"),
+	$MHREC(MH$_STATVERS,	"STATVERS, the statistics of !AZ are of version !UL, MHMON reads version !UL"),
+	$MHREC(MH$_MANYSERVERS,	"MANYSERVERS, !UL MSCPHUB servers run on this host: give /NODE"),
+	$MHREC(MH$_RECORD,	"RECORD, recording every !UL second!%S to !AZ"),
+	$MHREC(MH$_MODBUS,	"MODBUS, the counters are served over Modbus/TCP on !AZ, port !UL"),
+	$MHREC(MH$_MBUSERR,	"MBUSERR, the counters are not served over Modbus/TCP: !AZ failed, errno=!SL (!AZ)"),
 	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),
 	$MHREC(MH$_UPTIME,	"UPTIME, MSCPHUB !AZ, node !AZ, up !UL day!%S !2ZL:!2ZL:!2ZL, OpenVMS time of !AZ"),
 	$MHREC(MH$_UNSAFE,	"UNSAFE, /SYNC=NONE: a WRITE is answered before its data is on disk - for tests only"),

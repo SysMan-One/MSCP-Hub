@@ -16,6 +16,8 @@
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
 #		22-OCT-2026	RRL	X01-16 : the manuals of the DEC layout (User's Guide,
 #						Programmer's Guide), MH_PDF renders them.
+#		22-OCT-2026	RRL	X01-17 : MHMON and the collector of T4; Modbus/TCP needs the
+#						threads.
 #
 #---
 
@@ -140,6 +142,8 @@ add_library(mhcore STATIC
 	src/mh_blk.c
 	src/mh_bk.c
 	src/mh_mscp.c
+	src/mh_stat.c
+	src/mh_mbus.c
 	src/mh_hlp.c)
 
 target_include_directories(mhcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -148,7 +152,10 @@ target_include_directories(mhcore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
 
-target_link_libraries(mhcore PUBLIC StarLet::starlet PkgConfig::URING mh_options)
+#	The counters over Modbus/TCP are served by a thread of their own
+find_package(Threads REQUIRED)
+
+target_link_libraries(mhcore PUBLIC StarLet::starlet PkgConfig::URING Threads::Threads mh_options)
 
 if ( HELP_FOUND )
 	message(STATUS "MSCPHUB: /HELP answered out of the library, HELP ${HELP_VERSION} from ${HELP_DIR}")
@@ -178,7 +185,14 @@ add_executable(mscphub src/mscphub.c)
 
 target_link_libraries(mscphub PRIVATE mhcore)
 
-install(TARGETS mscphub RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
+#
+#	MHMON, the monitor of the server: it reads the statistics block
+#
+add_executable(mhmon src/mhmon.c)
+
+target_link_libraries(mhmon PRIVATE mhcore)
+
+install(TARGETS mscphub mhmon RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 
 #
 #	The service: the systemd unit, the sample configuration, the manual
@@ -194,6 +208,7 @@ set(MH_CONFFILE		"${CMAKE_INSTALL_FULL_SYSCONFDIR}/mscphub.conf")
 set(MH_FULL_SBINDIR	"${CMAKE_INSTALL_FULL_SBINDIR}")
 set(MH_FULL_DOCDIR	"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DOCDIR}")
 set(MH_FULL_HLBDIR	"${CMAKE_INSTALL_PREFIX}/${MH_HLBDIR}")
+set(MH_T4DIR		"/var/opt/mscphub/t4" CACHE PATH "Where the collector of T4 keeps its files")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphub.8.in ${CMAKE_CURRENT_BINARY_DIR}/mscphub.8 @ONLY)
 
@@ -205,6 +220,14 @@ if ( MH_SYSTEMD )
 	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/etc/mscphub.service.in ${CMAKE_CURRENT_BINARY_DIR}/mscphub.service @ONLY)
 
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mscphub.service DESTINATION ${MH_SYSTEMDDIR})
+
+	#
+	#	The collector of T4: MHMON records the counters every minute, a
+	#	file a day.  Installed, never enabled.
+	#
+	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/etc/mscphub-t4.service.in ${CMAKE_CURRENT_BINARY_DIR}/mscphub-t4.service @ONLY)
+
+	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mscphub-t4.service DESTINATION ${MH_SYSTEMDDIR})
 
 	#
 	#	systemd is told of the new unit; it is neither enabled nor

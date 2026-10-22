@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-16"
-#define	__REV__		"1.16.0"
+#define	__IDENT__	"X01-17"
+#define	__REV__		"1.17.0"
 
 /*
 **++
@@ -55,6 +55,8 @@
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		22-OCT-2026	RRL	X01-16 : the manuals in the layout of DEC: a User's Guide and
 **						a Programmer's Guide, EN and RU, PDF by MH_PDF.
+**		22-OCT-2026	RRL	X01-17 : the statistics block for MHMON every 100 ms; the counters
+**						over Modbus/TCP (/MODBUS), in a thread of their own.
 **
 **--
 */
@@ -95,6 +97,7 @@ static	const OPTS	s_opts [] = {
 	{ { $ASCINI("credits") },	&s_cfg.credits,	0,		OPTS$K_INT },
 	{ { $ASCINI("timezone") },	&s_cfg.timezone, ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("ack") },	&s_cfg.ack,	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("modbus") },	&s_cfg.modbus,	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("unit0") },	&s_cfg.unit[0],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("unit1") },	&s_cfg.unit[1],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("unit2") },	&s_cfg.unit[2],	ASC$K_SZ,	OPTS$K_STR },
@@ -409,6 +412,7 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 						mh$cc_tick(&s_port);
 
 					mh$bk_tick(&s_port);
+					mh$stat_tick(&s_port);
 
 					break;
 
@@ -500,6 +504,15 @@ int	l_status;
 	if ( !(1 & mh$mscp_init(&s_port, &s_cfg)) )
 		return	1;
 
+	/*
+	**  The statistics block for MHMON and Modbus: the server serves its
+	**  disks without them, but not with a wrong /MODBUS
+	*/
+	mh$stat_open(&s_port, &s_cfg, __IDENT__);
+
+	if ( $DEFSEV(mh$mbus_start($ASCPTR(&s_cfg.modbus))) == STS$K_FATAL )
+		return	1;
+
 	mh$mac2str(s_port.mac, l_macstr, sizeof(l_macstr));
 
 	$MHMSG(MH$_STARTUP, __IDENT__, $ASCPTR(&s_cfg.node), s_cfg.sysid, s_cfg.group, s_port.ifname, l_macstr);
@@ -511,6 +524,8 @@ int	l_status;
 
 	mh$cc_shutdown(&s_port);
 	s_mh$stats();
+	mh$mbus_stop();
+	mh$stat_close();
 	mh$lan_close(&s_port);
 
 	return	(1 & l_status) ? 0 : 1;

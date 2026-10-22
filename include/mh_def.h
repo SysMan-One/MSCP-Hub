@@ -58,6 +58,7 @@
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **		22-OCT-2026	RRL	X01-16 : the backend is io_uring, not threads (the comment).
+**		22-OCT-2026	RRL	X01-17 : the statistics block for MHMON; its messages.
 **
 **--
 */
@@ -67,11 +68,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-16"
+#define	__IDENT__	"X01-17"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.16.0"
+#define	__REV__		"1.17.0"
 #endif
 
 #ifndef	__FAC__
@@ -137,6 +138,13 @@ enum	{
 	MH$K_MSG_LATSTATS,			/* The time of the commands of a unit, on SIGUSR1	*/
 	MH$K_MSG_MISALIGN,			/* A block device starts inside a physical sector	*/
 	MH$K_MSG_NODIRECT,			/* A file is served through the page cache	*/
+	MH$K_MSG_NOSTAT,			/* The statistics block cannot be made		*/
+	MH$K_MSG_NOSERVER,			/* MHMON: no server runs			*/
+	MH$K_MSG_STATVERS,			/* MHMON: a block of another version		*/
+	MH$K_MSG_MANYSERVERS,			/* MHMON: several servers, /NODE is needed	*/
+	MH$K_MSG_RECORD,			/* MHMON: recording to a T4 file		*/
+	MH$K_MSG_MODBUS,			/* The counters are served over Modbus/TCP	*/
+	MH$K_MSG_MBUSERR,			/* ... cannot be				*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -180,6 +188,13 @@ enum	{
 #define	MH$_LATSTATS		$MHSTS(MH$K_MSG_LATSTATS,	STS$K_INFO)
 #define	MH$_MISALIGN		$MHSTS(MH$K_MSG_MISALIGN,	STS$K_WARN)
 #define	MH$_NODIRECT		$MHSTS(MH$K_MSG_NODIRECT,	STS$K_INFO)
+#define	MH$_NOSTAT		$MHSTS(MH$K_MSG_NOSTAT,		STS$K_WARN)
+#define	MH$_NOSERVER		$MHSTS(MH$K_MSG_NOSERVER,	STS$K_ERROR)
+#define	MH$_STATVERS		$MHSTS(MH$K_MSG_STATVERS,	STS$K_ERROR)
+#define	MH$_MANYSERVERS		$MHSTS(MH$K_MSG_MANYSERVERS,	STS$K_ERROR)
+#define	MH$_RECORD		$MHSTS(MH$K_MSG_RECORD,		STS$K_INFO)
+#define	MH$_MODBUS		$MHSTS(MH$K_MSG_MODBUS,		STS$K_INFO)
+#define	MH$_MBUSERR		$MHSTS(MH$K_MSG_MBUSERR,	STS$K_WARN)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -282,6 +297,7 @@ typedef struct mh_cfg_t {
 	int		credits;		/* /CREDITS: of MSCP$DISK, 0 - the default	*/
 	ASC		timezone;		/* /TIMEZONE=LOCAL | UTC | [+|-]hh[:mm]		*/
 	ASC		ack;			/* /ACK=FLUSH | HOLD				*/
+	ASC		modbus;			/* /MODBUS: [address:]port, empty - none	*/
 	ASC		unit [MH$K_MAXUNIT];	/* /UNITn=name,path[,RO][,MEDIA=m][,SECTOR=n]	*/
 } MH$CFG;
 
@@ -716,6 +732,7 @@ typedef struct mh_unit_t {
 
 	uint64_t	nread, nwrite, rbytes, wbytes;
 	MH$LAT		lat [MH$K_LAT_N];
+	uint64_t	qint;			/* Sum over the ticks of the commands running and waiting	*/
 } MH$UNIT;
 
 /*
@@ -793,6 +810,20 @@ int	mh$mac2str	(const uint8_t *a_mac, char *a_out, unsigned a_outsz);
 uint64_t mh$now_ns	(void);
 
 #define	$MHMSG(a_sts, ...)	$PUTMSG_FAO((a_sts), ##__VA_ARGS__)
+
+/*
+**  MHSTAT.C
+*/
+int	mh$stat_open	(MH$PORT *a_port, const MH$CFG *a_cfg, const char *a_ident);
+int	mh$stat_tick	(MH$PORT *a_port);
+int	mh$stat_close	(void);
+
+/*
+**  MHMBUS.C
+*/
+int	mh$mbus_start	(const char *a_spec);
+int	mh$mbus_stop	(void);
+int	mh$mbus_answer	(uint8_t *a_pdu, unsigned a_len, unsigned *a_rlen);
 
 /*
 **  MHHLP.C

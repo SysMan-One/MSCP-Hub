@@ -1,0 +1,51 @@
+#++
+#  MODULE:		etc/mscphub-t4.service.in
+#  IDENT:		X01-17
+#  REV:			1.17.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the systemd unit that records the counters of the server in files
+#			of the T4 style, as the T4 collector of OpenVMS does: MHMON every minute, a file
+#			a day in @MH_T4DIR@, T4_<node>_<date>_<start>_<end>.CSV.  CMake fills in the
+#			paths at configuration time and installs the result.
+#
+#			The unit is installed and NOT enabled:
+#
+#			  systemctl enable --now mscphub-t4
+#
+#			It waits for the server when the server does not run, and goes on when it
+#			comes back.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	22-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		22-OCT-2026	RRL	X01-17 : Initial revision.
+#
+#--
+#
+
+[Unit]
+Description=MSCPHUB - the counters of the server in T4 files
+Documentation=man:mscphub(8) file:@MH_FULL_DOCDIR@/mscphub_users_guide.md
+After=mscphub.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p @MH_T4DIR@
+ExecStart=@MH_FULL_SBINDIR@/mhmon ALL /NODISPLAY /RECORD=@MH_T4DIR@ /INTERVAL=60
+
+#
+#  SIGTERM: MHMON ends the file of the day and gives it the time of its end
+#
+KillSignal=SIGTERM
+Restart=on-failure
+RestartSec=30
+
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

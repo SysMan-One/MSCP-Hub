@@ -166,6 +166,28 @@ server stops it. The default is 4.
 Writes the messages to the file named. By default they go to the
 standard error, which systemd keeps in its journal.
 
+## /MODBUS -- serve the counters over Modbus/TCP
+
+```
+/MODBUS=[address:]port
+```
+
+Specifies the TCP port, and the address, on which the server answers
+Modbus/TCP requests for its counters: a SCADA, a PLC panel or any
+Modbus client can read them. Port 502 is the Modbus port; any other
+will do. Without /MODBUS nothing is served.
+
+The counters are served by a thread of their own, out of a copy the
+server makes every 100 ms; a client never holds up the disks. The
+registers are read with the functions 03 and 04, the identification
+of the device with 2B/0E; nothing can be written. The map of the
+registers is in the User's Guide, Appendix D.
+
+```
+/MODBUS=502
+/MODBUS=192.168.1.10:1502
+```
+
 ## /NODE -- the SCSNODE of the server
 
 ```
@@ -290,6 +312,118 @@ Answers a WRITE as soon as Linux has taken the data, before it is on
 the disk. Faster, but a crash or a power failure of the Linux computer
 can lose data an OpenVMS node believes is written. For tests only. The
 server says UNSAFE when it starts.
+
+## MHMON -- the monitor of the server
+
+```
+mhmon [DISK | NODES | SERVER | ALL] [/qualifier...]
+```
+
+MHMON shows what a running server does, as the MONITOR utility of
+OpenVMS does: every /INTERVAL seconds, the value of the last interval
+(CUR), and the average, the least and the greatest since MHMON
+started (AVE, MIN, MAX). It reads a copy of the counters the server
+makes every 100 ms in shared memory (/dev/shm/mscphub.<node>), and
+never writes to it. With /RECORD it writes the counters to a file of
+the T4 style, for TLViz and other tools of T4.
+
+Run it as root, on the computer of the server.
+
+```
+# mhmon
+# mhmon NODES
+# mhmon DISK /ITEM=ALL /INTERVAL=5
+# mhmon ALL /NODISPLAY /RECORD=/var/opt/mscphub/t4 /INTERVAL=60
+```
+
+### Classes
+
+- DISK -- every disk: its name on the nodes, the label of its volume,
+  the nodes that have it online (mounted, or being mounted), and the
+  item of /ITEM. The default.
+- NODES -- every node the server knows: its system ID, the state of
+  its channel and of its virtual circuit, how many times the channel
+  has opened, its connections, the disks online to it and the MSCP
+  commands it sends a second.
+- SERVER -- frames, kilobytes, retransmissions, duplicate and out of
+  order packets, data sent and taken, commands in progress, the data
+  buffers in use.
+- ALL -- the three in turn, one an interval.
+
+### /ENDING
+
+```
+/ENDING=hh:mm[:ss]
+```
+
+Specifies when MHMON stops: today, or tomorrow when the time is past.
+Without it MHMON runs until Ctrl/C or SIGTERM.
+
+### /INTERVAL
+
+```
+/INTERVAL=seconds     (default 3)
+```
+
+Specifies the seconds between two samples, 1 to 3600. The samples
+fall on the boundaries of the interval of the clock: with
+/INTERVAL=60, on the minute.
+
+### /ITEM
+
+```
+/ITEM=OPERATION_RATE | THROUGHPUT | QUEUE_LENGTH | RESPONSE_TIME | ALL
+```
+
+Specifies what the class DISK shows: commands a second, kilobytes a
+second, the average number of commands running and waiting, the
+average time from a command to its answer in milliseconds; ALL shows
+them in turn. The default is OPERATION_RATE.
+
+### /NODE
+
+```
+/NODE=name
+```
+
+Specifies the SCSNODE of the server to watch, when several servers
+run on the computer. Without it MHMON takes the only one there is.
+
+### /NODISPLAY
+
+```
+/NODISPLAY
+```
+
+Nothing is shown: MHMON only records. /RECORD is required with it.
+
+### /RECORD
+
+```
+/RECORD=file-spec | directory
+```
+
+Writes the rates of every interval to a file of the T4 style: the
+node, the date and the time of the start, the names of the columns,
+then a row a sample - the time of the end of the sample, then the
+values. A field with no value is empty; every row has the same number
+of fields. The columns are those of the server when the file is
+begun: its rows, four items of every disk, the commands of every
+node.
+
+A directory gets a file a day,
+T4_<node>_<date>_<start>_<end>.CSV, the form of the files of T4; the
+file being written ends in _RUN. A recording waits for a server that
+does not run yet, and goes on when it comes back.
+
+### T4 -- record all the time
+
+The unit mscphub-t4.service records the counters every minute to
+/var/opt/mscphub/t4, a file a day. It is installed but not enabled:
+
+```
+# systemctl enable --now mscphub-t4
+```
 
 ## Signals
 
@@ -661,6 +795,35 @@ Explanation: There are more nodes on the LAN than the server remembers
 
 User Action: Report it.
 
+### MANYSERVERS
+
+```
+'n' MSCPHUB servers run on this host: give /NODE
+```
+
+Severity: error.
+
+Explanation: MHMON has found the statistics of several servers on the
+computer and does not know which one to show.
+
+User Action: Give MHMON the SCSNODE of the server: /NODE=name.
+
+### MBUSERR
+
+```
+the counters are not served over Modbus/TCP: 'call' failed, errno='n' ('text')
+```
+
+Severity: warning.
+
+Explanation: /MODBUS is given, but the server cannot serve the
+counters there: most often the port is in use by another program
+(bind, errno=98) or the address is not of this computer (bind,
+errno=99). The server serves its disks without it.
+
+User Action: Give another port or address in /MODBUS, or stop the
+program that has the port.
+
 ### MISALIGN
 
 ```
@@ -676,6 +839,19 @@ server still serves the device.
 
 User Action: For a new disk, make the partition start on a multiple of
 1 MB (parted and fdisk do so by default) and copy the data over.
+
+### MODBUS
+
+```
+the counters are served over Modbus/TCP on 'address', port 'n'
+```
+
+Severity: information.
+
+Explanation: The server answers Modbus/TCP requests for its counters
+(/MODBUS).
+
+User Action: None.
 
 ### MSCPERR
 
@@ -774,6 +950,35 @@ Explanation: A required qualifier is missing. The server stops.
 
 User Action: Add it.
 
+### NOSERVER
+
+```
+no MSCPHUB server runs on this host'text'
+```
+
+Severity: error.
+
+Explanation: MHMON has found no statistics of a server: no server runs
+on this computer, or not the one /NODE names, or MHMON is not run as
+root. With /RECORD, MHMON waits for the server.
+
+User Action: Start the server (systemctl start mscphub); check /NODE.
+
+### NOSTAT
+
+```
+no statistics for MHMON: 'call' failed, errno='n' ('text')
+```
+
+Severity: warning.
+
+Explanation: The server cannot make its statistics block in shared
+memory (/dev/shm). It serves its disks, but MHMON and /MODBUS see
+nothing.
+
+User Action: Check that /dev/shm is there and is not full (df
+/dev/shm).
+
 ### NOTOPIC
 
 ```
@@ -785,6 +990,18 @@ Severity: error.
 Explanation: /HELP names a topic the help library does not have.
 
 User Action: Give mscphub /HELP to see the topics.
+
+### RECORD
+
+```
+recording every 'n' second(s) to 'file'
+```
+
+Severity: information.
+
+Explanation: MHMON has begun a file of /RECORD.
+
+User Action: None.
 
 ### SHUTDOWN
 
@@ -826,6 +1043,20 @@ and sent, and send errors. Dropped frames are frames of other groups
 or for other nodes; that is normal.
 
 User Action: None.
+
+### STATVERS
+
+```
+the statistics of 'name' are of version 'n', MHMON reads version 'n'
+```
+
+Severity: error.
+
+Explanation: The server and MHMON are of different versions, and the
+layout of the statistics has changed between them.
+
+User Action: Use the MHMON installed with the server; install both
+from one kit.
 
 ### SYSERR
 

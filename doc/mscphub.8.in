@@ -17,6 +17,7 @@
 .\"		20-OCT-2026	RRL	X01-12 : 4K disks: the cluster, MISALIGN.
 .\"		21-OCT-2026	RRL	X01-15 : a file O_DIRECT, NODIRECT.
 .\"		22-OCT-2026	RRL	X01-16 : SEE ALSO names the manuals.
+.\"		22-OCT-2026	RRL	X01-17 : /MODBUS; MONITOR - mhmon and the files of T4.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -167,10 +168,34 @@ Write the messages to
 .I file
 rather than to the standard error.
 .TP
+.BI /MODBUS= [address:]port
+Serve the counters of the server over Modbus/TCP, read only, from a thread
+of its own: functions 03 and 04 read the registers, 2B/0E the identification
+of the device.  The map of the registers is in the User\(aqs Guide,
+Appendix D.
+.TP
 .BR /HELP [=\(dq\fItopic\fR\ ...\(dq]
 Display the help library: every parameter, the troubleshooting, every
 message and what to do about it.
 .B mscphub \(dq/HELP=Messages IOSTUCK\(dq
+.SH MONITOR
+The server publishes its state and counters every 100 ms in shared memory,
+.IR /dev/shm/mscphub. node.
+.B mhmon
+shows them as the MONITOR utility of OpenVMS does:
+.PP
+.B mhmon
+.RB [ DISK | NODES | SERVER | ALL ]
+.RI [ /qualifier ...]
+.PP
+the disks, their volume labels and the nodes that have them online; the
+nodes; the counters of the server \- with CUR, AVE, MIN and MAX.
+.B /RECORD
+writes them to files of the T4 style;
+.B mscphub\-t4.service
+(installed, not enabled) records them every minute, a file a day.
+.B mhmon /HELP
+describes it.
 .SH SIGNALS
 .TP
 .BR SIGTERM ", " SIGINT

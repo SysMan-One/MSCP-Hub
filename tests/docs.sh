@@ -19,6 +19,7 @@
 #	MODIFICATION HISTORY:
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
+#		22-OCT-2026	RRL	X01-17 : the qualifiers of MHMON.
 #
 
 SRC=$1
@@ -45,6 +46,19 @@ do
 	grep -q "/$O" "$SRC/doc/mscphub.8.in" || fail "/$O is not in doc/mscphub.8.in"
 done
 
+#	The qualifiers of MHMON: $ASCINI("name") of its S_OPTS, a topic below MHMON
+MOPTS=`sed -n 's/.*\$ASCINI("\([a-z0-9]*\)").*/\1/p' "$SRC/src/mhmon.c" | tr a-z A-Z | sort -u`
+
+[ -n "$MOPTS" ] || fail "no qualifier found in src/mhmon.c"
+
+for O in $MOPTS
+do
+	for F in doc/mscphublib.md doc/mscphublib_ru.md
+	do
+		grep -q "^### /$O\$" "$SRC/$F" || fail "MHMON /$O has no topic in $F"
+	done
+done
+
 #	The messages: MH$_NAME of the catalogue, but the NORMAL of success
 MSGS=`sed -n 's/^#define[ 	]*MH\$_\([A-Z]*\)[ 	].*/\1/p' "$SRC/include/mh_def.h" | grep -v '^NORMAL$'`
 
@@ -64,5 +78,5 @@ then
 	exit 1
 fi
 
-echo "%DOCS-S-SUMMARY, `echo $OPTS | wc -w` parameters and `echo $MSGS | wc -w` messages documented"
+echo "%DOCS-S-SUMMARY, `echo $OPTS | wc -w` parameters, `echo $MOPTS | wc -w` of MHMON and `echo $MSGS | wc -w` messages documented"
 exit 0
