@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-19ECO2"
-#define	__REV__		"1.19.2"
+#define	__IDENT__	"X01-19ECO3"
+#define	__REV__		"1.19.3"
 
 /*
 **++
@@ -61,6 +61,7 @@
 **		22-OCT-2026	RRL	X01-19 : the parameter file in /etc/mscphub.
 **		22-OCT-2026	RRL	X01-19ECO1 : T_BLK and T4.SH give a busy small board more time.
 **		22-OCT-2026	RRL	X01-19ECO2 : the User's Guide, C.5 - the server on another computer.
+**		22-OCT-2026	RRL	X01-19ECO3 : the User's Guide, C.6 - losing the server under load.
 **
 **--
 */

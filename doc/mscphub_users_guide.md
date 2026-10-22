@@ -1706,7 +1706,33 @@ Across two computers and a tunnel the server itself still takes one or two micro
 command. The way through the LAN and the tunnel costs about a millisecond more than the bridge of
 C.1, and the durable write on that SSD two milliseconds.
 
-## C.6 Reading These Numbers
+## C.6 Losing the Server Under Load
+
+The server of C.5 was then stopped, killed and cut off from the LAN while the node used the disk.
+Two jobs on one node copied a file of 1.6 MB to the disk and compared every copy with its original
+for 45 minutes, 22-OCT-2026; in that time the server was lost four times, about seven minutes apart:
+
+| Event | The server serves the disk again | What the node shows |
+|---|---|---|
+| `systemctl restart mscphub` | 10 seconds later | Nothing: the server said BYE to every node, and the virtual circuit was closed in order |
+| `systemctl stop mscphub`, 90 seconds without a server, `systemctl start mscphub` | 10 seconds after the start | Nothing: the I/O of the jobs waited 100 seconds and went on |
+| `kill -9` of the server; systemd starts it again 5 seconds later | 19 seconds later | `%PEA0, Excessive packet losses on LAN Path` and `Port has Closed Virtual Circuit`, two entries in the error log |
+| The tunnel down for 120 seconds; the server keeps running | 4 seconds after the tunnel is up | The same two messages; the server closed the virtual circuit itself after 8 seconds of silence |
+
+| Measure | Value |
+|---|---|
+| Rounds | 3 980 and 3 979, 0 errors; no job failed or stopped |
+| Error count of the disk (`SHOW DEVICE/FULL`) | 0 |
+| The error log of the node | 4 entries of the port PEA0, two for each of the last two events; none of the disk |
+| `ANALYZE/DISK_STRUCTURE` | The same report as in C.5: the four losses left nothing behind |
+
+The node keeps every I/O request while the server is away and sends it again when the server is
+back, as it does for a disk served by another OpenVMS node: the volume goes into mount verification
+and waits up to MVTIMEOUT seconds (3 600 by default). So the server can be restarted, upgraded or
+lost for minutes under load, and no data is lost. Stop it in the usual way when you can: the
+BYE it sends lets the nodes close the virtual circuit at once, without an entry in the error log.
+
+## C.7 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the
