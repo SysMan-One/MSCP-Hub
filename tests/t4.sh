@@ -22,6 +22,8 @@
 #		22-OCT-2026	RRL	X01-17 : /ENDING by date -d @seconds, busybox has no +4 sec.
 #		22-OCT-2026	RRL	X01-18 : a recording without /NODE waits for a server that is
 #						not there yet (where no other server runs).
+#		22-OCT-2026	RRL	X01-19ECO1 : the block is held 10 s, not 6: on a busy small
+#						board the last sample came after it was gone.
 #
 
 TSTAT=$1
@@ -35,7 +37,7 @@ fail ()
 	FAILS=`expr $FAILS + 1`
 }
 
-"$TSTAT" HOLD 6 > "$OUT/node" &
+"$TSTAT" HOLD 10 > "$OUT/node" &
 HOLD=$!
 sleep 1
 NODE=`cat "$OUT/node"`

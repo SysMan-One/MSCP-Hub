@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BLK"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-19ECO1"
+#define	__REV__		"1.19.1"
 
 /*
 **++
@@ -30,6 +30,8 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-13 : the window opens to 16, RSVP at its half.
+**		22-OCT-2026	RRL	X01-19ECO1 : the backend is waited for up to 30 s, as in T_BK: a
+**						WRITE to an SD card of a busy small board takes more than 2 s.
 **
 **--
 */
@@ -359,14 +361,14 @@ static	int	s_t$isend	(
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
-**	Wait for the backend, up to 2 s.
+**	Wait for the backend, up to 30 s: a small board under load is slow.
 **--
 */
 static	int	s_t$disk	(
 		MH$PORT *	a_port
 			)
 {
-	return	mh$bk_wait(a_port, 2000);
+	return	mh$bk_wait(a_port, 30000);
 }
 
 
