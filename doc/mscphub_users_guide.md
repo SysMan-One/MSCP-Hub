@@ -55,6 +55,7 @@ This manual contains the following chapters and appendixes:
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
 | Appendix A | Lists the files installed and used |
 | Appendix B | Lists the limits of the server |
+| Appendix C | Gives the results of measurements of the server |
 
 The reader who installs the server for the first time wants Chapters 2, 3 and 4, in that order. The
 reader who holds a message wants Chapter 6, and the one who holds a symptom, Chapter 7.
@@ -1233,3 +1234,72 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | Time a disk command may take | 15 seconds, then IOSTUCK |
 | Retransmissions before a circuit fails | 30 |
 | LAN adapters | 1 |
+
+---
+
+# Appendix C
+# Performance
+
+## C.1 The Test Configuration
+
+MSCPHUB is developed and tested against real OpenVMS. The nodes run under AlphaEmu, the emulator of
+the DEC AlphaServer ES40 made by StarLet Squad: a whole VMScluster of OpenVMS Alpha nodes runs on one
+Linux computer, next to the server, and every change of MSCPHUB is tried on it before it is released.
+
+| Item | Configuration |
+|---|---|
+| OpenVMS nodes | Two AlphaServer ES40 under AlphaEmu, 2 CPUs and 1 GB each; OpenVMS Alpha Version 8.3; DE500 LAN adapters |
+| LAN | A Linux bridge on the host |
+| Linux computer | Intel Xeon E5-2697 v4; a consumer NVMe SSD with ext4 |
+| MSCPHUB | /SYNC=DSYNC, /ACK=HOLD; the disk is an image file of 200 MB on ext4, written full |
+
+## C.2 Three Disks Compared
+
+One node writes and reads the same data on three disks in turn: its own IDE disk, a disk of MSCPHUB,
+and the IDE disk of the other node served to it by the MSCP server of OpenVMS. Seconds, the median of
+three rounds, MSCPHUB Version X01-16, 22-OCT-2026:
+
+| Test | Own IDE disk | MSCPHUB | MSCP server of OpenVMS |
+|---|---|---|---|
+| `COPY` of a file of 15.7 MB to the disk | 0.77 | 0.99 | 1.30 |
+| `COPY` of that file from the disk to `NLA0:` | 4.56 | 4.78 | 5.37 |
+| `BACKUP/VERIFY` of 1297 small files | 27.20 | 35.47 | 40.60 |
+
+MSCPHUB is faster than the MSCP server of OpenVMS in all three tests: by 24 % on the write, 11 % on
+the read and 13 % on the many small files of BACKUP.
+
+**Note**
+
+> The own IDE disk of an emulated node writes into the memory of the Linux computer, without waiting
+> for its disk. MSCPHUB answers a WRITE only when the data is on the medium (Section 1.4).
+
+## C.3 Endurance
+
+Two nodes copied files to the disks of MSCPHUB and compared every copy with its original, without a
+pause:
+
+| Run | Version | Result |
+|---|---|---|
+| 24 hours, three jobs, a disk of 512-octet and a disk of 4096-octet sectors | X01-09 | 128 335, 104 056 and 129 025 rounds, 0 errors; the speed the same in the first and the last hour |
+| 1 hour, two nodes on one disk of 4096-octet sectors | X01-14 | 6 541 and 6 695 rounds, 0 errors; `ANALYZE/DISK_STRUCTURE` clean |
+| 1 hour, two nodes on one file disk | X01-15 | 7 895 and 7 856 rounds, 0 errors; `ANALYZE/DISK_STRUCTURE` clean |
+
+## C.4 Where the Time Goes
+
+The message LATSTATS splits the time of a command. During BACKUP/VERIFY (Version X01-15):
+
+| Command | Average | The Linux disk | The LAN and the node | The server itself |
+|---|---|---|---|---|
+| READ | 550 µs | 214 µs | 334 µs | 1 µs |
+| WRITE | 812 µs | 551 µs | 259 µs | 2 µs |
+
+The server itself takes one or two microseconds of a command. The rest is the disk of the Linux
+computer and the node at the other end. The same BACKUP/VERIFY takes 30.7 seconds with
+/SYNC=NONE and 34.0 to 34.8 on a partition instead of a file: what remains is the price of a durable
+write on a consumer SSD. An SSD with power-loss protection removes most of it.
+
+## C.5 Reading These Numbers
+
+Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
+x86 computers the times are different. What the tables show is the comparison: the same node, the
+same data, three kinds of disk.
