@@ -15,6 +15,7 @@
 #	MODIFICATION HISTORY:
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
+#		22-OCT-2026	RRL	X01-17 : the statistics block, Modbus, MHMON and T4.
 #
 #---
 
@@ -47,6 +48,14 @@ add_executable(t_bk t_bk.c)
 target_link_libraries(t_bk PRIVATE mhcore)
 
 add_test(NAME bk COMMAND t_bk)
+
+add_executable(t_stat t_stat.c)
+
+target_link_libraries(t_stat PRIVATE mhcore)
+
+add_test(NAME stat COMMAND t_stat)
+
+add_test(NAME t4 COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/t4.sh $<TARGET_FILE:t_stat> $<TARGET_FILE:mhmon>)
 
 add_test(NAME params COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/params.sh $<TARGET_FILE:mscphub>)
 
