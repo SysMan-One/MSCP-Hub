@@ -32,6 +32,7 @@
 **  MODIFICATION HISTORY:
 **
 **		22-OCT-2026	RRL	X01-16 : Initial revision.
+**		22-OCT-2026	RRL	X01-19ECO4 : the notice of the title page on the back of it.
 **
 **--
 """
@@ -111,14 +112,27 @@ def split_title(text):
 			meta["kind"] = m.group(1)
 			break
 
-	for line in lines[:20]:
+	#  An indented line that is not a field of the identification block is the notice - the copyright
+	#  and the terms - which goes on the back of the title page; a blank line ends a paragraph of it
+	notice = [""]
+
+	for line in lines[:30]:
+		if line.strip() == "---":
+			break
+
 		m = re.match(r"^\s{4}(\S[^:]*):\s+(.+?)\s*$", line)
+		key = LABELS.get(m.group(1).strip().lower()) if m else None
 
-		if m:
-			key = LABELS.get(m.group(1).strip().lower())
+		if key:
+			meta[key] = m.group(2)
+		elif m:
+			continue
+		elif line.startswith("    "):
+			notice[-1] = (notice[-1] + " " + line.strip()).strip()
+		elif not line.strip() and notice[-1]:
+			notice.append("")
 
-			if key:
-				meta[key] = m.group(2)
+	meta["notice"] = [para for para in notice if para]
 
 	#  The body starts after the rule that closes the title page
 	for i, line in enumerate(lines):
@@ -126,6 +140,17 @@ def split_title(text):
 			return meta, "\n".join(lines[i + 1:])
 
 	return meta, text
+
+
+def back_of_title(paras):
+	"""The notice as LaTeX: at the foot of a page of its own, after the title page."""
+	SPECIAL = { "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+			"_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}" }
+
+	text = "\n\n".join("\\noindent " + "".join(SPECIAL.get(c, c) for c in para).replace("(C)", r"\copyright{}")
+			for para in paras)
+
+	return "\\thispagestyle{empty}\n\\vspace*{\\fill}\n{\\small\n%s\n}\n\\clearpage\n" % text
 
 
 def join_headings(text):
@@ -167,6 +192,9 @@ def build(src, out):
 				"version": meta.get("version", "").replace("MSCPHUB Version ", ""),
 				"kind": meta.get("kind", "")}, encoding="utf-8")
 
+		back = Path(tmp) / "back.tex"
+		back.write_text(back_of_title(meta["notice"]) if meta["notice"] else "", encoding="utf-8")
+
 		md = Path(tmp) / "body.md"
 		md.write_text(body, encoding="utf-8")
 
@@ -195,6 +223,7 @@ def build(src, out):
 			"-V", "date=%s   ***   %s" % (meta.get("version", ""), meta.get("date", "")),
 			"-V", "lang=%s" % lang,
 			"--include-in-header=%s" % hdr,
+			"--include-before-body=%s" % back,
 			str(md),
 		]
 

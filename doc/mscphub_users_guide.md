@@ -8,6 +8,11 @@
     Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-18.
     Date:               22-OCT-2026
 
+    Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
+
+    MSCPHUB is free software, distributed under the GNU General Public License,
+    Version 3 or later. It comes with ABSOLUTELY NO WARRANTY.
+
 ---
 
 # Preface

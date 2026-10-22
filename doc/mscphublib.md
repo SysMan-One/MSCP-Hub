@@ -1207,4 +1207,4 @@ User Action: None.
 
 ## Author
 
-StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+StarLet Squad and Ruslan R. Laishev

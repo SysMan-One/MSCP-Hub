@@ -19,9 +19,10 @@
 .\"		22-OCT-2026	RRL	X01-16 : SEE ALSO names the manuals.
 .\"		22-OCT-2026	RRL	X01-17 : /MODBUS; MONITOR - mhmon and the files of T4.
 .\"		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
+.\"		22-OCT-2026	RRL	X01-19ECO4 : AUTHOR without the AKA; the date of .TH.
 .\"
 .\"---
-.TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.TH MSCPHUB 8 "22 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
 .SH NAME
 mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
 .SH SYNOPSIS
@@ -282,7 +283,7 @@ trademark of Linus Torvalds; Modbus is a registered trademark of Schneider
 Electric, licensed to the Modbus Organization, Inc.  MSCPHUB is not affiliated
 with them.
 .SH AUTHOR
-StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+StarLet Squad and Ruslan R. Laishev
 .SH SEE ALSO
 .BR systemctl (1),
 .BR journalctl (1),

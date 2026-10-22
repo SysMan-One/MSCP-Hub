@@ -73,11 +73,11 @@ Then run it as a service: see the User's Guide, Chapter 4.
 
 ## Author
 
-StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+StarLet Squad and Ruslan R. Laishev
 
 ## License
 
-Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan).
+Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
 
 MSCPHUB is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software

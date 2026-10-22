@@ -1207,4 +1207,4 @@ virtual circuit to node 'name' ('systemid') is open: 'software' 'version' on 'ha
 
 ## Author -- автор
 
-StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+StarLet Squad and Ruslan R. Laishev
