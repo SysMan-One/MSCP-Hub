@@ -40,6 +40,12 @@ not decoration. A documented decision for everything, a message for every condit
 the operator has to guess - that way of working is part of the heritage, and it is kept by being
 used.
 
+That is also why MSCPHUB can be read as a course. The student of computer engineering finds in it a
+real cluster protocol, a disk server and its storage, end to end, small enough to read in a few
+evenings; the *MSCPHUB Programmer's Guide* is written to be studied. And the engineer who
+worked with VMS clusters in their day will find the old words in their old places - SCS, MSCP, the
+virtual circuit, the HSC - and may well remember something the younger ones never knew.
+
 ## Document Structure
 
 This manual contains the following chapters and appendixes:
@@ -68,6 +74,23 @@ reader who holds a message wants Chapter 6, and the one who holds a symptom, Cha
 * *OpenVMS System Manager's Manual*
 * *MSCPHUB Programmer's Guide*
 * The manual page `mscphub(8)` and the help library of the server (`mscphub /HELP`)
+
+## Trademarks
+
+OpenVMS, VMScluster, Alpha, AlphaServer, Integrity, Digital, DEC, HSC, HSJ and HSD are trademarks of
+Hewlett Packard Enterprise Development LP or of VMS Software, Inc. T4 and TLViz are tools of Hewlett
+Packard Enterprise. Linux is the registered trademark of Linus Torvalds in the U.S. and other
+countries. Intel and Xeon are trademarks of Intel Corporation. Arm and Cortex are trademarks of Arm
+Limited. Rockchip is a trademark of Fuzhou Rockchip Electronics Co., Ltd. Raspberry Pi is a trademark
+of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider Electric, licensed to the Modbus
+Organization, Inc. Debian is a registered trademark of Software in the Public Interest, Inc. DPDK is
+a project of The Linux Foundation. PF_RING is a trademark of ntop. NaPi is the name of the boards of
+the NaPi Lab team. All other names of products and companies are trademarks of their respective
+owners.
+
+MSCPHUB is an independent implementation, made for interoperability. It contains no code of OpenVMS
+and is not affiliated with, endorsed or supported by any of the owners named here; their names are
+used only to say what MSCPHUB works with.
 
 ## Conventions
 
@@ -157,7 +180,7 @@ most 16 MB.
 So the hub of a home VMScluster can be a small board. The same kit builds and passes all its tests on
 a NaPi-C board of the NaPi World (https://github.com/napilab/napi-boards): a Rockchip RK3308, four
 Cortex-A35 cores, half a gigabyte of memory, Armbian. A Raspberry Pi or any other ARM board with a
-64-bit Linux will do as well. Put the images on a USB disk or an SSD rather than on the SD card: the
+64-bit Linux should do as well. Put the images on a USB disk or an SSD rather than on the SD card: the
 server writes every block it is given before it answers.
 
 An emulated Alpha on a desktop computer, a NaPi in the corner serving its disks, and the cluster is
@@ -1197,8 +1220,10 @@ puts in; "(s)" stands for a plural ending.
 
     no MSCPHUB server runs on this host*text*
 
-    *Explanation:* MHMON has found no statistics of a server: no server runs on this computer, or not the one /NODE
-    names, or MHMON is not run as root. With /RECORD, MHMON waits for the server.
+    *Explanation:* MHMON has found no statistics of a server, or the server does not update them -
+    MHMON watches them for a quarter of a second when it starts. No server runs on this computer, or
+    not the one /NODE names, or it hangs, or MHMON is not run as root. With /RECORD, MHMON waits for
+    the server.
 
     *User Action:* Start the server (`systemctl start mscphub`); check /NODE.
 
@@ -1551,7 +1576,8 @@ the read and 13 % on the many small files of BACKUP.
 **Note**
 
 > The own IDE disk of an emulated node writes into the memory of the Linux computer, without waiting
-> for its disk. MSCPHUB answers a WRITE only when the data is on the medium (Section 1.4).
+> for its disk, and so does the disk the MSCP server of OpenVMS serves - it is the IDE disk of the
+> other node. MSCPHUB answers a WRITE only when the data is on the medium (Section 1.4).
 
 ## C.3 Endurance
 

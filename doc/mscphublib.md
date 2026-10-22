@@ -958,9 +958,11 @@ no MSCPHUB server runs on this host'text'
 
 Severity: error.
 
-Explanation: MHMON has found no statistics of a server: no server runs
-on this computer, or not the one /NODE names, or MHMON is not run as
-root. With /RECORD, MHMON waits for the server.
+Explanation: MHMON has found no statistics of a server, or the server
+does not update them - MHMON watches them for a quarter of a second
+when it starts. No server runs on this computer, or not the one /NODE
+names, or it hangs, or MHMON is not run as root. With /RECORD, MHMON
+waits for the server.
 
 User Action: Start the server (systemctl start mscphub); check /NODE.
 

@@ -1,6 +1,6 @@
 !++
 !  MODULE:		etc/mscphub.conf.example
-!  IDENT:		X01-16
+!  IDENT:		X01-17
 !
 !  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
 !
@@ -19,6 +19,7 @@
 !  MODIFICATION HISTORY:
 !
 !		22-OCT-2026	RRL	X01-16 : /HELP=/AUTHORIZE, the topic as it is named.
+!		22-OCT-2026	RRL	X01-17 : /MODBUS.
 !--
 !
 ! The LAN interface the OpenVMS nodes are on.  The same LAN segment - a
@@ -62,3 +63,8 @@
 ! soon as the frames that came in are taken).
 !
 ! /ACK=HOLD
+!
+! The counters over Modbus/TCP, for a SCADA or a PLC panel: [address:]port.
+! MHMON reads them on this computer without it.
+!
+! /MODBUS=502

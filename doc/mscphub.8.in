@@ -256,6 +256,12 @@ journalctl \-u mscphub \-n 30
 The disk I/O is io_uring: a Linux kernel 5.10 or later, with io_uring not
 turned off (kernel.io_uring_disabled).  Do not serve a file or a device the
 host itself uses, and do not change one while it is served.
+.PP
+OpenVMS, VMScluster, Alpha, DEC and HSC are trademarks of Hewlett Packard
+Enterprise Development LP or of VMS Software, Inc.; Linux is the registered
+trademark of Linus Torvalds; Modbus is a registered trademark of Schneider
+Electric, licensed to the Modbus Organization, Inc.  MSCPHUB is not affiliated
+with them.
 .SH AUTHOR
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 .SH SEE ALSO

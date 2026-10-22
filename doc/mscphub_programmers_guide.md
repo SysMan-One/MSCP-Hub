@@ -26,7 +26,7 @@ neither repeats the other.
 
 | Part | Contents |
 |---|---|
-| Chapter 1 | Why the server exists, and the decisions it rests upon |
+| Chapter 1 | Why the server exists, the decisions it rests upon, why it does not bypass the kernel, and how it may be studied |
 | Chapter 2 | Architecture: the layers, the event loop, the path of a command |
 | Chapter 3 | The modules, one by one |
 | Chapter 4 | The data structures |
@@ -35,6 +35,23 @@ neither repeats the other.
 | Chapter 7 | The build system and the kit |
 | Chapter 8 | The tests and what they guard |
 | Appendix A | Known limitations |
+
+## Trademarks
+
+OpenVMS, VMScluster, Alpha, AlphaServer, Integrity, Digital, DEC, HSC, HSJ and HSD are trademarks of
+Hewlett Packard Enterprise Development LP or of VMS Software, Inc. T4 and TLViz are tools of Hewlett
+Packard Enterprise. Linux is the registered trademark of Linus Torvalds in the U.S. and other
+countries. Intel and Xeon are trademarks of Intel Corporation. Arm and Cortex are trademarks of Arm
+Limited. Rockchip is a trademark of Fuzhou Rockchip Electronics Co., Ltd. Raspberry Pi is a trademark
+of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider Electric, licensed to the Modbus
+Organization, Inc. Debian is a registered trademark of Software in the Public Interest, Inc. DPDK is
+a project of The Linux Foundation. PF_RING is a trademark of ntop. netmap is free software of Luigi Rizzo and the University of Pisa. NaPi is the name of the boards of
+the NaPi Lab team. All other names of products and companies are trademarks of their respective
+owners.
+
+MSCPHUB is an independent implementation, made for interoperability. It contains no code of OpenVMS
+and is not affiliated with, endorsed or supported by any of the owners named here; their names are
+used only to say what MSCPHUB works with.
 
 ## Conventions
 
@@ -121,6 +138,44 @@ server carries no general-purpose code of its own.
   serves Modbus out of the published copy.
 * **No fallback for old kernels.** io_uring and the other interfaces of the kernels of the last five
   years are required; there is no second path for an older kernel.
+
+## 1.5 Why Not DPDK, SPDK, netmap or PF_RING
+
+Taking the network and the disks away from the kernel is a craft the authors practise - they write
+software that moves traffic with DPDK - and MSCPHUB could be given it. The LAN lives in one module,
+`mh_lan.c`, behind four routines; a port of DPDK, netmap, PF_RING or AF_XDP would be a module beside
+it, chosen at configuration time. The disks live in `mh_bk.c`, where SPDK would be a second backend.
+It is not done, because here it would buy nothing worth its price:
+
+* **The server is not where the time goes.** It spends one or two microseconds on a command; the rest
+  is the disk of the Linux computer and the node at the other end (*MSCPHUB User's Guide*, Appendix
+  C.4). Bypassing the kernel removes the kernel's part of the network: some microseconds of hundreds.
+* **A durable WRITE waits for the medium.** SPDK sends the same flush to the same SSD and does not
+  make it faster. Only an SSD with power-loss protection does.
+* **SPDK takes the whole NVMe controller from the kernel:** no file system, no partitions, no LVM -
+  the disks of MSCPHUB would no longer be images that `cp` and `dd` can copy, and the root file
+  system of a small computer is often on that very controller.
+* **DPDK, netmap and PF_RING take the network adapter from the kernel**, or need a driver of their
+  own; to be fast they keep a CPU core polling at full load, and want huge pages. A small board has
+  none of that to spare, and its adapter no such driver.
+* **A node on the same computer gains nothing.** An emulated OpenVMS node on a tap device in a bridge
+  sends its frames through the kernel whatever the server does.
+* **Every one is a second path through the code**, to build, test and keep, for a gain inside the
+  spread of the measurements.
+
+When it would pay: many fast nodes on 10 or 25 Gb Ethernet, hundreds of thousands of frames a
+second. Then the first step is more protocol threads; the next is AF_XDP - the adapter stays with the
+kernel, and an XDP filter passes only the frames of NISCA, type 60-07; and DPDK, netmap or PF_RING
+after that, if AF_XDP falls short.
+
+## 1.6 A Course of Study
+
+The server is meant to be read. It is small, it is one protocol from the Ethernet frame up to the
+disk, and every decision in it is written down, here and in the sources. That makes it a fair course
+for students of computer and network engineering: a real cluster protocol, a real disk server, a
+real event loop, and the conventions of an engineering culture that built systems to last. And the
+engineer who knew VMS clusters in their day is welcome too: the names are the old ones, and so,
+mostly, are the ideas - some of them, perhaps, the reader remembers better than this manual tells.
 
 ---
 
@@ -488,8 +543,10 @@ statement.
   `mh_utl.c`, in the OpenVMS form: `%MSCPHUB-F-IDCLASH, ...`. The text is in the catalogue, not at the
   point of the call.
 * **What the programmer is to read** goes through `$LOG_FAO` with an explicit `STS$K_*` severity.
-* Nothing calls `printf` in any of its forms. Output goes through the FAO engine of StarLet, in the
-  OpenVMS directives: `!AZ`, `!UL`, `!SL`, `!UQ`, `!XW`, `!%S` and the rest.
+* No message, screen or file of the server and of MHMON is made with `printf` in any of its forms:
+  they go through the FAO engine of StarLet, in the OpenVMS directives: `!AZ`, `!UL`, `!SL`, `!UQ`,
+  `!XW`, `!%S` and the rest. (A path built by `snprintf` is not output.) The tests are free to write
+  as they like.
 * **The failure of a C RTL routine is reported where it happens**, with the name of the routine and
   `errno`:
 

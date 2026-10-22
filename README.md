@@ -8,7 +8,9 @@ NISCA (the PEDRIVER protocol, ethertype 60-07). It is not a VMScluster member an
 has no votes.
 
 Why: the VMScluster and the engineering culture of Digital Equipment Corporation are a
-heritage worth keeping at work. MSCPHUB lets OpenVMS nodes keep their disks on today's
+heritage worth keeping at work. It is small and every decision in it is written down, so it
+serves as a course for students of computer engineering - and the old hands of VMS will find
+their old friends in it. MSCPHUB lets OpenVMS nodes keep their disks on today's
 storage, and it is made the DEC way on purpose - messages, HELP, qualifiers, IDENTs, sources
 and manuals in the manner of OpenVMS.
 
@@ -83,6 +85,16 @@ version. It comes with ABSOLUTELY NO WARRANTY. See [LICENSE](LICENSE).
 
 MSCPHUB is an independent implementation of the protocols, made for
 interoperability. It contains no code of OpenVMS and is not affiliated with,
-endorsed or supported by VMS Software, Inc. or Hewlett Packard Enterprise.
-OpenVMS and VMScluster are trademarks of their owners; they are named here only
-to say what MSCPHUB works with.
+endorsed or supported by VMS Software, Inc., Hewlett Packard Enterprise or any
+other owner named here; the names are used only to say what MSCPHUB works with.
+
+## Trademarks
+
+OpenVMS, VMScluster, Alpha, AlphaServer, Integrity, Digital, DEC and HSC are
+trademarks of Hewlett Packard Enterprise Development LP or of VMS Software, Inc.
+T4 and TLViz are tools of Hewlett Packard Enterprise. Linux is the registered
+trademark of Linus Torvalds in the U.S. and other countries. Raspberry Pi is a
+trademark of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider
+Electric, licensed to the Modbus Organization, Inc. NaPi is the name of the
+boards of the NaPi Lab team. All other names of products and companies are
+trademarks of their respective owners.

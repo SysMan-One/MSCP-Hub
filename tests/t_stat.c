@@ -134,7 +134,8 @@ static	int	s_t$hold	(
 		int		a_secs
 			)
 {
-struct timespec	l_ts = { 0, 20 * 1000000 };
+struct timespec	l_ts = { 0, 20 * 1000000 }, l_t0, l_now;
+uint64_t	l_ns;
 
 	s_t$server();
 
@@ -144,15 +145,22 @@ struct timespec	l_ts = { 0, 20 * 1000000 };
 	printf("%s\n", $ASCPTR(&s_cfg.node));
 	fflush(stdout);
 
-	for ( int i = 0; i < a_secs * 50; i++ )
-		{
-		s_port.units[0].nread += 20;
-		s_port.units[0].rbytes += 20 * 512;
-		s_port.rx_frames += 2;
+	/*
+	**  The counters follow the clock, not the loop: 1000 reads a second
+	**  however slowly the loop goes round on a busy computer
+	*/
+	clock_gettime(CLOCK_MONOTONIC, &l_t0);
+
+	do	{
+		clock_gettime(CLOCK_MONOTONIC, &l_now);
+		l_ns = (uint64_t) (l_now.tv_sec - l_t0.tv_sec) * 1000000000ULL + (uint64_t) l_now.tv_nsec - (uint64_t) l_t0.tv_nsec;
+		s_port.units[0].nread = l_ns / 1000000;
+		s_port.units[0].rbytes = s_port.units[0].nread * 512;
+		s_port.rx_frames = l_ns / 10000000;
 		s_port.tick++;
 		mh$stat_tick(&s_port);
 		nanosleep(&l_ts, NULL);
-		}
+		} while ( l_ns < (uint64_t) a_secs * 1000000000ULL );
 
 	mh$stat_close();
 

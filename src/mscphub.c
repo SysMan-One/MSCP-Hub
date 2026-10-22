@@ -511,7 +511,10 @@ int	l_status;
 	mh$stat_open(&s_port, &s_cfg, __IDENT__);
 
 	if ( $DEFSEV(mh$mbus_start($ASCPTR(&s_cfg.modbus))) == STS$K_FATAL )
+		{
+		mh$stat_close();
 		return	1;
+		}
 
 	mh$mac2str(s_port.mac, l_macstr, sizeof(l_macstr));
 

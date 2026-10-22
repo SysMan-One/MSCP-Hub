@@ -29,6 +29,9 @@
 **		afresh; one that has gone is said on the screen and MHMON waits
 **		for it.
 **
+**		A server is alive when the SEQ of its block moves: MHMON looks at
+**		it for 250 ms when it starts, and does not trust the PID.
+**
 **		The label of a volume is read from the home block of the disk -
 **		the file or the device of the unit, opened read only - when the
 **		nodes that have it online change, and every minute.
@@ -174,6 +177,7 @@ static	const MH$STAT	*s_blk;			/* The block of the server, mapped		*/
 static	MH$STAT		s_cur, s_prev;		/* The last two copies				*/
 static	int		s_have;			/* 0 - none, 1 - one, 2 - two of one server	*/
 static	unsigned	s_shown;		/* Screens shown				*/
+static	int		s_hung;			/* The server lives but does not copy in	*/
 
 static	MH$MONVAL	s_disk [MH$K_STAT_MAXUNIT][MH$K_ITEM_N];
 static	MH$MONVAL	s_srv [MH$K_SRV_N];
@@ -358,8 +362,54 @@ fao_desc_t	l_dsc = { 31, 0, 0, a_out };
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	Is the server of a block alive: does SEQ move?  The server copies in
+**	every 100 ms, two and a half of which are waited for; a block left by
+**	a server that was killed, or a server that hangs, keeps its SEQ.  This
+**	does not trust the PID, which another process may have taken since.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_name		The name of the block: /mscphub.MHUB
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS - SEQ has moved; STS$K_ERROR - it has not, or there is no
+**	such block.
+**--
+*/
+static	int	s_mhmon$alive	(
+	const	char *	a_name
+			)
+{
+const	MH$STAT	*l_blk;
+struct timespec	l_ts = { 0, (MH$K_STAT_TICKS * MH$K_TICK_MS * 1000000L * 5) / 2 };
+uint32_t	l_seq;
+int		l_fd, l_alive;
+
+	if ( 0 > (l_fd = shm_open(a_name, O_RDONLY | O_CLOEXEC, 0)) )
+		return	STS$K_ERROR;
+
+	l_blk = mmap(NULL, offsetof(MH$STAT, started), PROT_READ, MAP_SHARED, l_fd, 0);
+	close(l_fd);
+
+	if ( l_blk == MAP_FAILED )
+		return	STS$K_ERROR;
+
+	l_seq = __atomic_load_n(&l_blk->seq, __ATOMIC_ACQUIRE);
+	nanosleep(&l_ts, NULL);
+	l_alive = (__atomic_load_n(&l_blk->seq, __ATOMIC_ACQUIRE) != l_seq);
+	munmap((void *) l_blk, offsetof(MH$STAT, started));
+
+	return	l_alive ? STS$K_SUCCESS : STS$K_ERROR;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	Find the block of the server: /mscphub.<node> of /NODE, or the only
-**	one there is.
+**	one whose server is alive.
 **
 **  FORMAL PARAMETERS:
 **	None.
@@ -375,7 +425,7 @@ static	int	s_mhmon$find	(void)
 {
 DIR		*l_dir;
 struct dirent	*l_de;
-unsigned	l_n = 0;
+unsigned	l_n = 0, l_seen = 0;
 size_t		l_plen = sizeof(MH$T_STAT_PREFIX) - 2;	/* "mscphub."					*/
 char		l_suffix [64];
 
@@ -406,6 +456,22 @@ char		l_suffix [64];
 		if ( strncmp(l_de->d_name, MH$T_STAT_PREFIX + 1, l_plen) || !l_de->d_name[l_plen] || (strlen(l_de->d_name) - l_plen > 6) )
 			continue;
 
+		/*
+		**  Only a block whose SEQ moves: one left by a server that was
+		**  killed, or by a /NODE no longer used, is not counted
+		*/
+		{
+		char	l_name [64];
+
+		l_name[0] = '/';
+		memcpy(l_name + 1, l_de->d_name, strlen(l_de->d_name) + 1);
+
+		l_seen++;
+
+		if ( !(1 & s_mhmon$alive(l_name)) )
+			continue;
+		}
+
 		if ( !l_n++ )
 			memcpy(l_suffix, l_de->d_name + l_plen, strlen(l_de->d_name + l_plen) + 1);
 		}
@@ -413,7 +479,7 @@ char		l_suffix [64];
 	closedir(l_dir);
 
 	if ( !l_n )
-		return	$MHMSG(MH$_NOSERVER, "");
+		return	$MHMSG(MH$_NOSERVER, l_seen ? ", or it does not respond" : "");
 
 	if ( l_n > 1 )
 		return	$MHMSG(MH$_MANYSERVERS, l_n);
@@ -565,6 +631,18 @@ int		l_status;
 
 	if ( s_have && ((l_copy.pid != s_cur.pid) || (l_copy.started != s_cur.started)) )
 		s_mhmon$reset();
+
+	/*
+	**  A server that lives but has not copied in for a second does not
+	**  respond: no value is shown for it, rather than the last one again
+	*/
+	if ( s_have && (l_copy.now_ns == s_cur.now_ns) )
+		{
+		s_hung = 1;
+		return	STS$K_ERROR;
+		}
+
+	s_hung = 0;
 
 	s_prev = s_cur;
 	s_cur = l_copy;
@@ -1022,8 +1100,12 @@ ssize_t	l_rc;
 
 	if ( !a_up )
 		{
-		s_mhmon$head("NO SERVER");
-		$MONLINE("No MSCPHUB server runs (!AZ); waiting for it.", s_shmname);
+		s_mhmon$head(s_hung ? "SERVER NOT RESPONDING" : "NO SERVER");
+
+		if ( s_hung )
+			$MONLINE("The MSCPHUB server !AZ (PID !UL) runs but has not updated its counters; waiting for it.",
+				s_cur.node, s_cur.pid);
+		else	$MONLINE("No MSCPHUB server runs (!AZ); waiting for it.", s_shmname);
 		}
 	else if ( l_class == MH$K_MON_DISK )
 		s_mhmon$disk(l_item);
@@ -1565,14 +1647,20 @@ fao_desc_t		l_tdsc;
 	**  No server at the start is an error at a terminal; a recording
 	**  waits for it, as a collector started with the system must
 	*/
-	if ( !(1 & (l_status = s_mhmon$sample())) )
+	/*
+	**  The server of /NODE must be alive too: its SEQ moves
+	*/
+	if ( (1 & (l_status = s_mhmon$sample())) && $ASCLEN(&s_cfg.node) && !(1 & s_mhmon$alive(s_shmname)) )
+		l_status = STS$K_ERROR;
+
+	if ( !(1 & l_status) )
 		{
 		if ( l_status == MH$_STATVERS )
 			return	1;
 
 		if ( !$ASCLEN(&s_cfg.record) )
 			{
-			$MHMSG(MH$_NOSERVER, "");
+			$MHMSG(MH$_NOSERVER, ", or it does not respond");
 			return	1;
 			}
 
