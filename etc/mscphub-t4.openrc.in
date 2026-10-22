@@ -1,0 +1,70 @@
+#!/sbin/openrc-run
+#++
+#  MODULE:		etc/mscphub-t4.openrc.in
+#  IDENT:		X01-18
+#  REV:			1.18.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the OpenRC script that records the counters of the server in files
+#			of the T4 style, as the T4 collector of OpenVMS does: MHMON every minute, a file
+#			a day in @MH_T4DIR@, T4_<node>_<date>_<start>_<end>.CSV.  CMake fills in the
+#			paths at configuration time and installs the result as @MH_INITDIR@/mscphub-t4.
+#			/etc/conf.d/mscphub-t4 may set:
+#
+#			  mhmon_dir		the directory of the files, @MH_T4DIR@
+#			  mhmon_interval	seconds between the samples, 60
+#			  mhmon_log		the messages of MHMON, /var/log/mscphub-t4.log
+#			  mhmon_node		the node of the server, when the host runs more than one
+#
+#			The script is installed and NOT added to a runlevel:
+#
+#			  rc-update add mscphub-t4 default
+#			  rc-service mscphub-t4 start
+#
+#			MHMON waits for the server when the server does not run, and goes on when it
+#			comes back.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	22-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		22-OCT-2026	RRL	X01-18 : Initial revision.
+#
+#--
+#
+
+name="MSCPHUB T4"
+description="MSCPHUB - the counters of the server in T4 files"
+
+: ${mhmon_dir:=@MH_T4DIR@}
+: ${mhmon_interval:=60}
+: ${mhmon_log:=/var/log/mscphub-t4.log}
+
+command="@MH_FULL_SBINDIR@/mhmon"
+command_args="ALL /NODISPLAY /RECORD=${mhmon_dir} /INTERVAL=${mhmon_interval}${mhmon_node:+ /NODE=${mhmon_node}}"
+
+#
+#  SIGTERM: MHMON ends the file of the day and gives it the time of its end
+#
+supervisor="supervise-daemon"
+respawn_delay=30
+error_log="${mhmon_log}"
+retry="TERM/15/KILL/5"
+
+depend()
+{
+	after mscphub
+	need localmount
+}
+
+start_pre()
+{
+	#
+	#  checkpath makes the last directory only, not /var/opt/mscphub
+	#
+	mkdir -p "${mhmon_dir}" || return 1
+	checkpath -f -m 0640 "${mhmon_log}"
+}

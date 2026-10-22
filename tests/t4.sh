@@ -20,6 +20,8 @@
 #
 #		22-OCT-2026	RRL	X01-17 : Initial revision.
 #		22-OCT-2026	RRL	X01-17 : /ENDING by date -d @seconds, busybox has no +4 sec.
+#		22-OCT-2026	RRL	X01-18 : a recording without /NODE waits for a server that is
+#						not there yet (where no other server runs).
 #
 
 TSTAT=$1
@@ -64,6 +66,29 @@ case "$RATE" in
 	9[5-9][0-9].*|10[0-4][0-9].*)	;;
 	*)				fail "the rate of the unit is $RATE, not about 1000" ;;
 esac
+
+#
+#	A recording started before any server waits for one and records it
+#	when it comes; only where no server runs, it would take that one
+#
+if ! ls /dev/shm/mscphub.* >/dev/null 2>&1
+then
+	mkdir "$OUT/wait"
+	"$MHMON" ALL /NODISPLAY /RECORD="$OUT/wait" /INTERVAL=1 2>"$OUT/werr" &
+	MON=$!
+	sleep 2
+	kill -0 $MON 2>/dev/null || fail "a recording without a server did not wait: `cat $OUT/werr`"
+	grep -q "NOSERVER.*waiting" "$OUT/werr" || fail "no NOSERVER, waiting: `cat $OUT/werr`"
+
+	"$TSTAT" HOLD 4 > "$OUT/node2" &
+	HOLD=$!
+	sleep 4
+	kill $MON 2>/dev/null
+	wait $MON
+	wait $HOLD
+
+	ls "$OUT/wait"/T4_`cat $OUT/node2`_*.CSV >/dev/null 2>&1 || fail "the server that came was not recorded: `cat $OUT/werr`"
+fi
 
 rm -rf "$OUT"
 

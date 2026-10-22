@@ -164,7 +164,8 @@ server stops it. The default is 4.
 ```
 
 Writes the messages to the file named. By default they go to the
-standard error, which systemd keeps in its journal.
+standard error, which systemd keeps in its journal; the scripts of
+OpenRC and System V init send it to /var/log/mscphub.log.
 
 ## /MODBUS -- serve the counters over Modbus/TCP
 
@@ -461,6 +462,23 @@ not start without it.
 
 To pin the server to a CPU, or to change its start line, use a
 drop-in (systemctl edit mscphub); do not edit the unit itself.
+
+Without systemd the installation puts a script of OpenRC or of
+System V init in /etc/init.d instead, not enabled either; its log is
+/var/log/mscphub.log:
+
+```
+# rc-update add mscphub default         OpenRC
+# rc-service mscphub start
+# rc-service mscphub report             SIGUSR1
+
+# update-rc.d mscphub defaults          System V init
+# /etc/init.d/mscphub start
+# /etc/init.d/mscphub report            SIGUSR1
+```
+
+Its variables - the parameter file, the log, the CPUs - are set in
+/etc/conf.d/mscphub (OpenRC) or /etc/default/mscphub (System V).
 
 ## Troubleshooting -- what to check first
 

@@ -164,7 +164,8 @@ Ethernet, мост, VLAN, tap-устройство в мосту. Обязате
 ```
 
 Пишет сообщения в указанный файл. По умолчанию они идут в
-стандартный поток ошибок, который systemd хранит в своём журнале.
+стандартный поток ошибок, который systemd хранит в своём журнале;
+скрипты OpenRC и System V init направляют его в /var/log/mscphub.log.
 
 ## /MODBUS -- отдавать счётчики по Modbus/TCP
 
@@ -458,6 +459,23 @@ SIGUSR1 до и после него и вычтите.
 
 Чтобы привязать сервер к процессору или изменить его строку запуска,
 используйте drop-in (systemctl edit mscphub); сам юнит не правьте.
+
+Без systemd установка кладёт вместо юнита скрипт OpenRC или System V
+init в /etc/init.d, тоже не включённый; его журнал --
+/var/log/mscphub.log:
+
+```
+# rc-update add mscphub default         OpenRC
+# rc-service mscphub start
+# rc-service mscphub report             SIGUSR1
+
+# update-rc.d mscphub defaults          System V init
+# /etc/init.d/mscphub start
+# /etc/init.d/mscphub report            SIGUSR1
+```
+
+Его переменные -- файл параметров, журнал, процессоры -- задаются в
+/etc/conf.d/mscphub (OpenRC) или /etc/default/mscphub (System V).
 
 ## Troubleshooting -- что проверить первым делом
 

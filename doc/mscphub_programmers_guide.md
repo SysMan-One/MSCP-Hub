@@ -2,10 +2,10 @@
 
 ## Programmer's Guide
 
-    Order Number:       MSCPHUB-PG-0117
-    Software Version:   MSCPHUB Version X01-17
+    Order Number:       MSCPHUB-PG-0118
+    Software Version:   MSCPHUB Version X01-18
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-16.
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-17.
     Date:               22-OCT-2026
 
 ---
@@ -646,7 +646,7 @@ fields it does not know.
 | `src/` | The modules |
 | `include/` | `mh_def.h`, `nisca.h`, `mscp.h` |
 | `doc/` | The manuals, the help library sources, the manual page, `mkpdf.py` |
-| `etc/` | The sample parameter file, the systemd unit |
+| `etc/` | The sample parameter file, the systemd units, the scripts of OpenRC and System V init |
 | `tests/` | The tests |
 | `cmake/` | The uninstall script |
 
@@ -666,7 +666,8 @@ fields it does not know.
 | `CMAKE_INSTALL_PREFIX` | `/opt/mscphub` | Where the server is installed |
 | `MH_STRICT` | OFF | Compiler warnings become errors |
 | `BUILD_TESTING` | ON | The tests are built |
-| `MH_SYSTEMD` | ON | The systemd unit is installed (never enabled) |
+| `MH_SYSTEMD` | ON where systemd runs | The systemd units are installed (never enabled) |
+| `MH_INIT` | `OPENRC`, `SYSV` or `NONE`, by the host | The init scripts installed in `MH_INITDIR`, `/etc/init.d` (never enabled) |
 | `MH_PDF` | OFF | The manuals are rendered as PDF |
 
 ## 7.4 The Checks of the Configuration
@@ -702,6 +703,7 @@ not in the kit.
 | `bk` | The backend: io_uring, read-modify-write, ranges of sectors, the cache of written sectors, ERASE, group commit, direct I/O |
 | `stat` | The statistics block: made, copied every 100 ms, never a torn copy under a writer in another thread, another layout refused, the queues; the answers of Modbus |
 | `t4` | MHMON records a published block: the header of T4, the same fields in every row, the rate of a unit |
+| `init` | The System V scripts: no start without the parameter file, the collector of T4 started, its state, stopped with its file closed |
 | `params` | The checks of the qualifiers |
 | `docs` | Every qualifier of the server and of MHMON and every message is documented |
 | `helplib` | `/HELP` answers out of the library (with the HELP package) |

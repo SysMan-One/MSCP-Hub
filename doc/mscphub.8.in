@@ -18,6 +18,7 @@
 .\"		21-OCT-2026	RRL	X01-15 : a file O_DIRECT, NODIRECT.
 .\"		22-OCT-2026	RRL	X01-16 : SEE ALSO names the manuals.
 .\"		22-OCT-2026	RRL	X01-17 : /MODBUS; MONITOR - mhmon and the files of T4.
+.\"		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -225,7 +226,16 @@ puts
 next to it.
 .TP
 .I @MH_SYSTEMDDIR@/mscphub.service
-The systemd unit: installed, not enabled.
+The systemd unit: installed, not enabled, where systemd runs.
+.TP
+.I @MH_INITDIR@/mscphub
+Without systemd, the script of OpenRC or of System V init: installed, not
+enabled.  Its variables are set in
+.I /etc/conf.d/mscphub
+or
+.IR /etc/default/mscphub ;
+its log is
+.IR /var/log/mscphub.log .
 .TP
 .I @MH_FULL_HLBDIR@/mscphub.hlb
 The help library of /HELP, and ru/mscphub_ru.hlb in Russian.
@@ -250,6 +260,15 @@ vi @MH_CONFFILE@
 systemctl enable \-\-now mscphub
 systemctl kill \-s USR1 mscphub
 journalctl \-u mscphub \-n 30
+.fi
+.RE
+.PP
+Under OpenRC or System V init:
+.PP
+.RS
+.nf
+rc\-update add mscphub default; rc\-service mscphub start; rc\-service mscphub report
+update\-rc.d mscphub defaults; /etc/init.d/mscphub start; /etc/init.d/mscphub report
 .fi
 .RE
 .SH NOTES

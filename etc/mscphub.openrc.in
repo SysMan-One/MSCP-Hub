@@ -1,0 +1,102 @@
+#!/sbin/openrc-run
+#++
+#  MODULE:		etc/mscphub.openrc.in
+#  IDENT:		X01-18
+#  REV:			1.18.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the OpenRC script of the server (Alpine, Gentoo, Artix ...).  CMake
+#			fills in the paths at configuration time and installs the result as
+#			@MH_INITDIR@/mscphub; the next installation overwrites it.  To alter how the
+#			server is started, set the variables below in /etc/conf.d/mscphub:
+#
+#			  mscphub_config	the parameter file, @MH_CONFFILE@
+#			  mscphub_log		where its messages go, /var/log/mscphub.log
+#			  mscphub_cpus		the CPUs it runs on, as taskset -c takes them
+#
+#			The script is installed and NOT added to a runlevel: a server that starts on
+#			its own begins to talk to the VMScluster on its LAN, and that is for the
+#			administrator to decide:
+#
+#			  rc-update add mscphub default
+#			  rc-service mscphub start
+#
+#			supervise-daemon keeps the server running and starts it again 5 seconds after
+#			it fails.  rc-service mscphub report sends it SIGUSR1: the state and the
+#			counters go to the log.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	22-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		22-OCT-2026	RRL	X01-18 : Initial revision.
+#
+#--
+#
+
+name="MSCPHUB"
+description="MSCP disk server for OpenVMS nodes"
+
+: ${mscphub_config:=@MH_CONFFILE@}
+: ${mscphub_log:=/var/log/mscphub.log}
+
+command="@MH_FULL_SBINDIR@/mscphub"
+command_args="/CONFIG=${mscphub_config}"
+
+#
+#  On the CPUs given: taskset puts itself in the place of the server, the PID is the same
+#
+if [ -n "${mscphub_cpus}" ]
+then
+	command_args="-c ${mscphub_cpus} ${command} ${command_args}"
+	command="$(command -v taskset)"
+fi
+
+#
+#  In the foreground under supervise-daemon, the messages of the standard error to the log;
+#  /LOGFILE in the parameter file sends them to a file of its own instead.  SIGTERM: the server
+#  says BYE to every node, so they close the virtual circuit at once.
+#
+supervisor="supervise-daemon"
+respawn_delay=5
+error_log="${mscphub_log}"
+retry="TERM/15/KILL/5"
+
+extra_started_commands="report"
+description_report="Write the state and the counters of the server to its log (SIGUSR1)"
+
+depend()
+{
+	#
+	#  The interface must be there and up; the server reads its address and MTU at start-up only
+	#
+	need net localmount
+	use logger
+}
+
+start_pre()
+{
+	if [ ! -f "${mscphub_config}" ]
+	then
+		eerror "${mscphub_config} not found; make it from ${mscphub_config}.example"
+		return 1
+	fi
+
+	if [ -n "${mscphub_cpus}" ] && [ -z "${command}" ]
+	then
+		eerror "mscphub_cpus is given, but there is no taskset (Alpine: apk add util-linux-misc)"
+		return 1
+	fi
+
+	checkpath -f -m 0640 "${mscphub_log}"
+}
+
+report()
+{
+	ebegin "Asking ${name} for its state and counters"
+	supervise-daemon "${RC_SVCNAME}" --signal USR1
+	eend $? "See ${mscphub_log}"
+}

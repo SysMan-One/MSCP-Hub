@@ -19,6 +19,8 @@
 #		22-OCT-2026	RRL	X01-17 : MHMON and the collector of T4; Modbus/TCP needs the
 #						threads.
 #		22-OCT-2026	RRL	X01-17 : the units of systemd only where systemd runs.
+#		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init where systemd
+#						does not run (MH_INIT).
 #
 #---
 
@@ -220,6 +222,7 @@ set(MH_FULL_SBINDIR	"${CMAKE_INSTALL_FULL_SBINDIR}")
 set(MH_FULL_DOCDIR	"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DOCDIR}")
 set(MH_FULL_HLBDIR	"${CMAKE_INSTALL_PREFIX}/${MH_HLBDIR}")
 set(MH_T4DIR		"/var/opt/mscphub/t4" CACHE PATH "Where the collector of T4 keeps its files")
+set(MH_INITDIR		"/etc/init.d" CACHE PATH "Where the init scripts are installed, without systemd")
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphub.8.in ${CMAKE_CURRENT_BINARY_DIR}/mscphub.8 @ONLY)
 
@@ -254,6 +257,48 @@ if ( MH_SYSTEMD )
 			endif()
 		endif()")
 endif()
+
+#
+#	Without systemd the scripts of the init of the host: OpenRC where
+#	openrc-run is (Alpine, Gentoo, Artix), System V init where there is
+#	/etc/init.d (Devuan, Slackware), none elsewhere.  Both kinds are made
+#	always - the tests run the System V ones - and one of them installed,
+#	never added to a runlevel.  -DMH_INIT=OPENRC|SYSV|NONE chooses.
+#
+if ( MH_SYSTEMD )
+	set(MH_K_INIT NONE)
+elseif ( EXISTS /sbin/openrc-run OR EXISTS /usr/sbin/openrc-run )
+	set(MH_K_INIT OPENRC)
+elseif ( IS_DIRECTORY /etc/init.d )
+	set(MH_K_INIT SYSV)
+else()
+	set(MH_K_INIT NONE)
+endif()
+
+set(MH_INIT "${MH_K_INIT}" CACHE STRING "The init scripts of the server: OPENRC, SYSV or NONE (installed, never enabled)")
+set_property(CACHE MH_INIT PROPERTY STRINGS OPENRC SYSV NONE)
+
+if ( NOT MH_INIT MATCHES "^(OPENRC|SYSV|NONE)$" )
+	message(FATAL_ERROR "MH_INIT is ${MH_INIT}, not OPENRC, SYSV or NONE")
+endif()
+
+foreach ( MH_KIND openrc sysv )
+	foreach ( MH_SCRIPT mscphub mscphub-t4 )
+		configure_file(${CMAKE_CURRENT_SOURCE_DIR}/etc/${MH_SCRIPT}.${MH_KIND}.in
+			${CMAKE_CURRENT_BINARY_DIR}/${MH_KIND}/${MH_SCRIPT} @ONLY)
+	endforeach()
+endforeach()
+
+if ( NOT MH_INIT STREQUAL "NONE" )
+	string(TOLOWER ${MH_INIT} MH_KIND)
+
+	install(PROGRAMS
+		${CMAKE_CURRENT_BINARY_DIR}/${MH_KIND}/mscphub
+		${CMAKE_CURRENT_BINARY_DIR}/${MH_KIND}/mscphub-t4
+		DESTINATION ${MH_INITDIR})
+endif()
+
+message(STATUS "MSCPHUB: systemd units ${MH_SYSTEMD}, init scripts ${MH_INIT}")
 
 install(FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/LICENSE

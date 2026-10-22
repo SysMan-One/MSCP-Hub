@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMON"
-#define	__IDENT__	"X01-17"
-#define	__REV__		"1.17.0"
+#define	__IDENT__	"X01-18"
+#define	__REV__		"1.18.0"
 
 /*
 **++
@@ -53,6 +53,8 @@
 **  MODIFICATION HISTORY:
 **
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
+**		22-OCT-2026	RRL	X01-18 : a recording waits for a server at its start also without
+**						/NODE, as it said it did; NOSERVER once.
 **
 **--
 */
@@ -412,7 +414,8 @@ int		l_fd, l_alive;
 **	one whose server is alive.
 **
 **  FORMAL PARAMETERS:
-**	None.
+**
+**	a_say		0 - no server is not signalled, the caller waits for one
 **
 **  IMPLICIT OUTPUTS:
 **	S_SHMNAME.
@@ -421,7 +424,9 @@ int		l_fd, l_alive;
 **	STS$K_SUCCESS; MH$_NOSERVER, MH$_MANYSERVERS (signalled).
 **--
 */
-static	int	s_mhmon$find	(void)
+static	int	s_mhmon$find	(
+		int		a_say
+			)
 {
 DIR		*l_dir;
 struct dirent	*l_de;
@@ -449,7 +454,7 @@ char		l_suffix [64];
 		}
 
 	if ( !(l_dir = opendir(MH$T_STAT_SHMDIR)) )
-		return	$MHMSG(MH$_NOSERVER, "");
+		return	a_say ? $MHMSG(MH$_NOSERVER, "") : MH$_NOSERVER;
 
 	while ( (l_de = readdir(l_dir)) )
 		{
@@ -479,7 +484,7 @@ char		l_suffix [64];
 	closedir(l_dir);
 
 	if ( !l_n )
-		return	$MHMSG(MH$_NOSERVER, l_seen ? ", or it does not respond" : "");
+		return	a_say ? $MHMSG(MH$_NOSERVER, l_seen ? ", or it does not respond" : "") : MH$_NOSERVER;
 
 	if ( l_n > 1 )
 		return	$MHMSG(MH$_MANYSERVERS, l_n);
@@ -1633,12 +1638,32 @@ fao_desc_t		l_tdsc;
 	if ( !(1 & __util$getparams(l_argc, l_argv, s_opts)) )
 		return	1;
 
-	if ( !(1 & s_mhmon$check(l_class)) || !(1 & s_mhmon$find()) )
+	if ( !(1 & s_mhmon$check(l_class)) )
 		return	1;
 
 	sigaction(SIGINT, &l_sa, NULL);
 	sigaction(SIGTERM, &l_sa, NULL);
 	signal(SIGPIPE, SIG_IGN);
+
+	/*
+	**  Which server: at a terminal there must be one; a recording - a
+	**  collector started with the system, maybe before the server - looks
+	**  for it again every interval, and says so once
+	*/
+	while ( !(1 & (l_status = s_mhmon$find(!$ASCLEN(&s_cfg.record) || l_waited))) )
+		{
+		if ( (l_status != MH$_NOSERVER) || !$ASCLEN(&s_cfg.record) || l_waited )
+			return	1;
+
+		$MHMSG(MH$_NOSERVER, ", waiting for it");
+		l_waited = 1;
+
+		while ( !s_stop && !(1 & s_mhmon$find(0)) )
+			sleep(s_cfg.interval);
+
+		if ( s_stop )
+			return	0;
+		}
 
 	s_tty = isatty(STDOUT_FILENO);
 	s_mhmon$reset();

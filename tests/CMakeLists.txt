@@ -16,6 +16,7 @@
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
 #		22-OCT-2026	RRL	X01-17 : the statistics block, Modbus, MHMON and T4.
+#		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
 #
 #---
 
@@ -58,6 +59,10 @@ add_test(NAME stat COMMAND t_stat)
 add_test(NAME t4 COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/t4.sh $<TARGET_FILE:t_stat> $<TARGET_FILE:mhmon>)
 
 set_tests_properties(t4 PROPERTIES TIMEOUT 60)
+
+add_test(NAME init COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/init.sh ${PROJECT_BINARY_DIR} $<TARGET_FILE:t_stat> $<TARGET_FILE:mhmon>)
+
+set_tests_properties(init PROPERTIES TIMEOUT 60)
 
 add_test(NAME params COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/params.sh $<TARGET_FILE:mscphub>)
 

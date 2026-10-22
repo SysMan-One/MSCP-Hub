@@ -2,10 +2,10 @@
 
 ## Руководство пользователя
 
-    Номер издания:      MSCPHUB-UG-0117-RUS
-    Версия программы:   MSCPHUB Version X01-17
+    Номер издания:      MSCPHUB-UG-0118-RUS
+    Версия программы:   MSCPHUB Version X01-18
     Операционная среда: Linux
-    Правка:             Заменяет русское руководство пользователя MSCPHUB версии X01-16.
+    Правка:             Заменяет русское руководство пользователя MSCPHUB версии X01-17.
     Дата:               22-OCT-2026
 
 ---
@@ -56,7 +56,7 @@ OpenVMS сервер — это дисковый контроллер класт
 | Глава 1 | Введение: что делает сервер, каким его видит узел OpenVMS, чего он не делает, маленькие компьютеры, на которых он работает |
 | Глава 2 | Установка сервера |
 | Глава 3 | Настройка сервера: данные кластера, диски, файл параметров |
-| Глава 4 | Работа сервера, использование его дисков в OpenVMS, наблюдение за ним через MHMON, T4 и Modbus |
+| Глава 4 | Работа сервера, использование его дисков в OpenVMS, наблюдение за ним через MHMON, T4 и Modbus, работа без systemd |
 | Глава 5 | Словарь команд: команды `mscphub` и `mhmon` и все их квалификаторы |
 | Глава 6 | Вид сообщения и перечень всех сообщений с указанием, что делать |
 | Глава 7 | Устранение неполадок: признак, куда смотреть, что делать |
@@ -225,19 +225,22 @@ MSCPHUB собирается из комплекта `MSCPHUB-`*ident*`.tar.gz`:
 | `/opt/mscphub/sbin/mscphub` | Сервер |
 | `/etc/opt/mscphub/mscphub.conf.example` | Образец файла параметров |
 | `/lib/systemd/system/mscphub.service` | Юнит systemd; не включён |
+| `/etc/init.d/mscphub` | Или скрипт OpenRC либо System V init; не включён |
 | `/opt/mscphub/share/man/man8/mscphub.8` | Страница руководства |
 | `/opt/mscphub/share/help/mscphub.hlb` | Библиотека помощи (при пакете HELP) |
 | `/opt/mscphub/share/doc/mscphub/` | Руководства и README |
 
-Юниты systemd ставятся только на компьютер, где работает systemd; `-DMH_SYSTEMD=ON` ставит их
-в любом случае. Без systemd — Devuan, Alpine, Slackware, маленькая плата со своим init — запускайте
-сервер из init компьютера, в фоне, с журналом в файл:
+Сборка смотрит, что за компьютер, и ставит один вид службы:
 
-```
-/opt/mscphub/sbin/mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /LOGFILE=/var/log/mscphub.log &
-```
+| На компьютере работает | Что ставится |
+|---|---|
+| systemd (Debian, Ubuntu, Armbian, Fedora) | `mscphub.service`, `mscphub-t4.service` в `/lib/systemd/system` |
+| OpenRC (Alpine, Gentoo, Artix) | скрипты `mscphub`, `mscphub-t4` в `/etc/init.d` |
+| System V init (Devuan, Slackware, busybox) | скрипты `mscphub`, `mscphub-t4` в `/etc/init.d` |
 
-Остановить — SIGTERM, счётчики — SIGUSR1, как сказано в главе 4.
+Чтобы выбрать самому, дайте первому `cmake` `-DMH_SYSTEMD=ON` или `OFF` и `-DMH_INIT=OPENRC`, `SYSV`
+или `NONE`. Ничто из этого не включается. В главе 4 даны команды systemd, в разделе 4.11 — команды
+OpenRC и System V init.
 
 ## 2.4 Пути поиска
 
@@ -603,6 +606,47 @@ T4 — сборщик временных рядов OpenVMS; его файлы �
 устройстве). Счётчики берутся из той же копии, которую читает MHMON, и отдаёт их отдельная нить:
 клиент никогда не задерживает диски. Писать нельзя ничего. Карта регистров приведена в приложении D.
 
+## 4.11 Работа без systemd
+
+На компьютер с OpenRC или System V init установка кладёт скрипты `mscphub` и `mscphub-t4` в
+`/etc/init.d`. Сообщения сервера идут в `/var/log/mscphub.log`, сообщения сборщика T4 — в
+`/var/log/mscphub-t4.log`. Команды этой главы становятся такими:
+
+| Что сделать | systemd | OpenRC | System V init |
+|---|---|---|---|
+| Запуск при загрузке | `systemctl enable mscphub` | `rc-update add mscphub default` | `update-rc.d mscphub defaults` |
+| Запустить | `systemctl start mscphub` | `rc-service mscphub start` | `/etc/init.d/mscphub start` |
+| Показать состояние | `systemctl kill -s USR1 mscphub` | `rc-service mscphub report` | `/etc/init.d/mscphub report` |
+| Читать журнал | `journalctl -u mscphub` | `less /var/log/mscphub.log` | `less /var/log/mscphub.log` |
+| Остановить | `systemctl stop mscphub` | `rc-service mscphub stop` | `/etc/init.d/mscphub stop` |
+| Писать файлы T4 | `systemctl enable --now mscphub-t4` | `rc-update add mscphub-t4 default` | `update-rc.d mscphub-t4 defaults` |
+
+`update-rc.d` — команда Devuan; в Slackware вызывайте скрипт из `/etc/rc.d/rc.local`.
+
+Чтобы изменить службу, не правьте скрипт — следующая установка его перезапишет. Задайте его
+переменные в своём файле:
+
+| OpenRC: `/etc/conf.d/mscphub` | System V init: `/etc/default/mscphub` | Смысл |
+|---|---|---|
+| `mscphub_config` | `MSCPHUB_CONFIG` | Файл параметров |
+| `mscphub_log` | `MSCPHUB_LOG` | Журнал |
+| `mscphub_cpus` | `MSCPHUB_CPUS` | Процессоры сервера, как их принимает `taskset -c` |
+
+Например, привязать сервер к процессору 3:
+
+```
+# echo 'MSCPHUB_CPUS=3' > /etc/default/mscphub
+```
+
+В busybox у Alpine нет `taskset`: сначала `apk add util-linux-misc`.
+
+Сборщик T4 берёт `mhmon_dir`, `mhmon_interval`, `mhmon_log` и `mhmon_node` из
+`/etc/conf.d/mscphub-t4` или `MHMON_DIR`, `MHMON_INTERVAL`, `MHMON_LOG` и `MHMON_NODE` из
+`/etc/default/mscphub-t4`.
+
+Под OpenRC `supervise-daemon` перезапускает упавший сервер через 5 секунд, как и systemd. Под System
+V init этого не делает никто: скрипт сообщает, если сервер сразу остановился, а журнал — почему.
+
 ---
 
 # Глава 5
@@ -711,7 +755,8 @@ OpenVMS группы и обслуживает диски `/UNIT0`–`/UNIT7` д
   **/LOGFILE=***спецификация-файла*
 
     Пишет сообщения в названный файл. По умолчанию они идут в стандартный поток ошибок, который
-    systemd сохраняет в своём журнале.
+    systemd сохраняет в своём журнале; скрипты OpenRC и System V init направляют его в
+    `/var/log/mscphub.log`.
 
   **/MODBUS=**[*адрес*`:`]*порт*
 
@@ -1524,6 +1569,9 @@ MHMON читает копию состояния и счётчиков, кото
 | `/lib/systemd/system/mscphub.service` | Юнит systemd |
 | `/opt/mscphub/share/man/man8/mscphub.8` | Страница руководства |
 | `/lib/systemd/system/mscphub-t4.service` | Сборщик файлов T4; не включён |
+| `/etc/init.d/mscphub`, `/etc/init.d/mscphub-t4` | Без systemd: скрипты OpenRC или System V init (раздел 4.11) |
+| `/etc/conf.d/mscphub`, `/etc/default/mscphub` | Ваши: переменные скрипта (раздел 4.11) |
+| `/var/log/mscphub.log` | Без systemd: журнал сервера |
 | `/dev/shm/mscphub.`*узел* | Состояние и счётчики работающего сервера, для MHMON и Modbus |
 | `/var/opt/mscphub/t4/` | Файлы T4 сборщика |
 | `/opt/mscphub/share/help/mscphub.hlb` | Библиотека помощи, английская |
@@ -1661,7 +1709,7 @@ ADDRESS.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Секунд с запуска сервера |
-| 10 | 4 | Версия сервера, текст: X01-17 |
+| 10 | 4 | Версия сервера, текст: X01-18 |
 | 14 | 4 | /NODE, текст |
 | 18 | 8 | /INTERFACE, текст |
 | 100 | 4 | Принято кадров |
@@ -1738,4 +1786,4 @@ ADDRESS.
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-17 |
+| 2 | MajorMinorRevision | X01-18 |

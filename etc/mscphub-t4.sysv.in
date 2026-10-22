@@ -1,0 +1,158 @@
+#!/bin/sh
+#++
+#  MODULE:		etc/mscphub-t4.sysv.in
+#  IDENT:		X01-18
+#  REV:			1.18.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the System V init script that records the counters of the server in
+#			files of the T4 style, as the T4 collector of OpenVMS does: MHMON every minute,
+#			a file a day in @MH_T4DIR@, T4_<node>_<date>_<start>_<end>.CSV.  CMake fills in
+#			the paths at configuration time and installs the result as
+#			@MH_INITDIR@/mscphub-t4.  /etc/default/mscphub-t4 may set:
+#
+#			  MHMON_DIR		the directory of the files, @MH_T4DIR@
+#			  MHMON_INTERVAL	seconds between the samples, 60
+#			  MHMON_LOG		the messages of MHMON, /var/log/mscphub-t4.log
+#			  MHMON_NODE		the node of the server, when the host runs more than one
+#
+#			The script is installed and NOT linked into the runlevels:
+#
+#			  update-rc.d mscphub-t4 defaults	(Devuan, Debian)
+#			  /etc/init.d/mscphub-t4 start
+#
+#			MHMON waits for the server when the server does not run, and goes on when it
+#			comes back.  Only the shell of POSIX and kill, the exit codes of the LSB.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	22-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		22-OCT-2026	RRL	X01-18 : Initial revision.
+#
+#--
+#
+### BEGIN INIT INFO
+# Provides:		mscphub-t4
+# Required-Start:	$local_fs $remote_fs
+# Required-Stop:	$local_fs $remote_fs
+# Should-Start:		mscphub
+# Should-Stop:		mscphub
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	MSCPHUB - the counters of the server in T4 files
+### END INIT INFO
+
+NAME=mhmon
+PROGRAM=@MH_FULL_SBINDIR@/mhmon
+
+[ -r /etc/default/mscphub-t4 ] && . /etc/default/mscphub-t4
+
+: ${MHMON_DIR:=@MH_T4DIR@}
+: ${MHMON_INTERVAL:=60}
+: ${MHMON_LOG:=/var/log/mscphub-t4.log}
+: ${MHMON_PIDFILE:=/var/run/mscphub-t4.pid}
+
+#
+#  The PID of MHMON, when it runs: the file names it and that process is MHMON
+#
+running ()
+{
+	[ -r "$MHMON_PIDFILE" ] || return 1
+	PID=`cat "$MHMON_PIDFILE"`
+	[ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && [ "`cat /proc/$PID/comm 2>/dev/null`" = "$NAME" ]
+}
+
+start ()
+{
+	if running
+	then
+		echo "mscphub-t4 is running, PID $PID"
+		return 0
+	fi
+
+	[ -x "$PROGRAM" ] || return 5
+	mkdir -p "$MHMON_DIR" || return 1
+
+	NODE=
+	[ -n "$MHMON_NODE" ] && NODE="/NODE=$MHMON_NODE"
+
+	printf "Starting mscphub-t4: "
+	nohup "$PROGRAM" ALL /NODISPLAY "/RECORD=$MHMON_DIR" "/INTERVAL=$MHMON_INTERVAL" $NODE </dev/null >>"$MHMON_LOG" 2>&1 &
+	echo $! >"$MHMON_PIDFILE"
+
+	sleep 1
+	if running
+	then
+		echo "PID $PID"
+		return 0
+	fi
+
+	echo "failed, see $MHMON_LOG:"
+	tail -3 "$MHMON_LOG"
+	rm -f "$MHMON_PIDFILE"
+	return 1
+}
+
+#
+#  SIGTERM: MHMON ends the file of the day and gives it the time of its end
+#
+stop ()
+{
+	if ! running
+	then
+		echo "mscphub-t4 is not running"
+		rm -f "$MHMON_PIDFILE"
+		return 0
+	fi
+
+	printf "Stopping mscphub-t4: "
+	kill -TERM "$PID"
+
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+	do
+		running || break
+		sleep 1
+	done
+
+	if running
+	then
+		kill -KILL "$PID"
+		echo "killed"
+	else
+		echo "done"
+	fi
+
+	rm -f "$MHMON_PIDFILE"
+	return 0
+}
+
+status ()
+{
+	if running
+	then
+		echo "mscphub-t4 is running, PID $PID"
+		return 0
+	fi
+
+	if [ -f "$MHMON_PIDFILE" ]
+	then
+		echo "mscphub-t4 is dead, $MHMON_PIDFILE is left"
+		return 1
+	fi
+
+	echo "mscphub-t4 is not running"
+	return 3
+}
+
+case "$1" in
+	start)			start ;;
+	stop)			stop ;;
+	restart|force-reload)	stop; start ;;
+	status)			status ;;
+	*)			echo "Usage: $0 {start|stop|restart|force-reload|status}"
+				exit 2 ;;
+esac

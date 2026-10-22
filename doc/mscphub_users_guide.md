@@ -2,10 +2,10 @@
 
 ## User's Guide
 
-    Order Number:       MSCPHUB-UG-0117
-    Software Version:   MSCPHUB Version X01-17
+    Order Number:       MSCPHUB-UG-0118
+    Software Version:   MSCPHUB Version X01-18
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-16.
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-17.
     Date:               22-OCT-2026
 
 ---
@@ -55,7 +55,7 @@ This manual contains the following chapters and appendixes:
 | Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do, the small computers it runs on |
 | Chapter 2 | Installing the server |
 | Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
-| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus |
+| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd |
 | Chapter 5 | Contains the command dictionary: the `mscphub` and `mhmon` commands and all their qualifiers |
 | Chapter 6 | Describes the format of a message and lists every message with what to do about it |
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
@@ -225,19 +225,22 @@ With the default prefix, `/opt/mscphub`:
 | `/opt/mscphub/sbin/mscphub` | The server |
 | `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
 | `/lib/systemd/system/mscphub.service` | The systemd unit; not enabled |
+| `/etc/init.d/mscphub` | Or the script of OpenRC or of System V init; not enabled |
 | `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
 | `/opt/mscphub/share/help/mscphub.hlb` | The help library (with the HELP package) |
 | `/opt/mscphub/share/doc/mscphub/` | The manuals and README |
 
-The systemd units are installed only on a computer where systemd runs; `-DMH_SYSTEMD=ON` installs
-them anyway. Without systemd - Devuan, Alpine, Slackware, a small board with its own init - start
-the server from the init of the computer, in the background, with its log to a file:
+The build looks at the computer and installs one kind of service:
 
-```
-/opt/mscphub/sbin/mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /LOGFILE=/var/log/mscphub.log &
-```
+| The computer runs | What is installed |
+|---|---|
+| systemd (Debian, Ubuntu, Armbian, Fedora) | `mscphub.service`, `mscphub-t4.service` in `/lib/systemd/system` |
+| OpenRC (Alpine, Gentoo, Artix) | the scripts `mscphub`, `mscphub-t4` in `/etc/init.d` |
+| System V init (Devuan, Slackware, busybox) | the scripts `mscphub`, `mscphub-t4` in `/etc/init.d` |
 
-Send it SIGTERM to stop it, SIGUSR1 for its counters, as Chapter 4 says.
+To choose yourself, give `-DMH_SYSTEMD=ON` or `OFF`, and `-DMH_INIT=OPENRC`, `SYSV` or `NONE`, to the
+first `cmake`. None of them is enabled. Chapter 4 gives the commands of systemd; Section 4.11 gives
+those of OpenRC and of System V init.
 
 ## 2.4 Search Paths
 
@@ -598,6 +601,48 @@ identification of the device). The counters come from the same copy MHMON reads,
 of their own: a client never holds up the disks. Nothing can be written. Appendix D gives the map of
 the registers.
 
+## 4.11 Running Without systemd
+
+On a computer with OpenRC or System V init, the installation puts the scripts `mscphub` and
+`mscphub-t4` in `/etc/init.d`. The messages of the server go to `/var/log/mscphub.log`, those of the
+collector of T4 to `/var/log/mscphub-t4.log`. The commands of this chapter become:
+
+| To | systemd | OpenRC | System V init |
+|---|---|---|---|
+| Start at boot | `systemctl enable mscphub` | `rc-update add mscphub default` | `update-rc.d mscphub defaults` |
+| Start | `systemctl start mscphub` | `rc-service mscphub start` | `/etc/init.d/mscphub start` |
+| Display the state | `systemctl kill -s USR1 mscphub` | `rc-service mscphub report` | `/etc/init.d/mscphub report` |
+| Read the log | `journalctl -u mscphub` | `less /var/log/mscphub.log` | `less /var/log/mscphub.log` |
+| Stop | `systemctl stop mscphub` | `rc-service mscphub stop` | `/etc/init.d/mscphub stop` |
+| Record T4 files | `systemctl enable --now mscphub-t4` | `rc-update add mscphub-t4 default` | `update-rc.d mscphub-t4 defaults` |
+
+`update-rc.d` is the command of Devuan; on Slackware, call the script from `/etc/rc.d/rc.local`.
+
+To alter the service, do not edit the script - the next installation overwrites it. Set its
+variables in a file of your own:
+
+| OpenRC: `/etc/conf.d/mscphub` | System V init: `/etc/default/mscphub` | Meaning |
+|---|---|---|
+| `mscphub_config` | `MSCPHUB_CONFIG` | The parameter file |
+| `mscphub_log` | `MSCPHUB_LOG` | The log |
+| `mscphub_cpus` | `MSCPHUB_CPUS` | The CPUs the server runs on, as `taskset -c` takes them |
+
+For example, to pin the server to CPU 3:
+
+```
+# echo 'MSCPHUB_CPUS=3' > /etc/default/mscphub
+```
+
+The busybox of Alpine has no `taskset`: `apk add util-linux-misc` first.
+
+The collector of T4 takes `mhmon_dir`, `mhmon_interval`, `mhmon_log` and `mhmon_node` from
+`/etc/conf.d/mscphub-t4`, or `MHMON_DIR`, `MHMON_INTERVAL`, `MHMON_LOG` and `MHMON_NODE` from
+`/etc/default/mscphub-t4`.
+
+Under OpenRC, `supervise-daemon` starts the server again 5 seconds after it fails, as systemd does.
+Under System V init, nothing does: the script says so when the server stops at once, and the log
+says why.
+
 ---
 
 # Chapter 5
@@ -707,7 +752,7 @@ severity F.
   **/LOGFILE=***file-spec*
 
     Writes the messages to the file named. By default they go to the standard error, which systemd
-    keeps in its journal.
+    keeps in its journal; the scripts of OpenRC and System V init send it to `/var/log/mscphub.log`.
 
   **/MODBUS=**[*address*`:`]*port*
 
@@ -1517,6 +1562,9 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | `/lib/systemd/system/mscphub.service` | The systemd unit |
 | `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
 | `/lib/systemd/system/mscphub-t4.service` | The collector of T4 files; not enabled |
+| `/etc/init.d/mscphub`, `/etc/init.d/mscphub-t4` | Without systemd: the scripts of OpenRC or of System V init (Section 4.11) |
+| `/etc/conf.d/mscphub`, `/etc/default/mscphub` | Yours: the variables of the script (Section 4.11) |
+| `/var/log/mscphub.log` | Without systemd: the log of the server |
 | `/dev/shm/mscphub.`*node* | The state and the counters of the running server, for MHMON and Modbus |
 | `/var/opt/mscphub/t4/` | The T4 files of the collector |
 | `/opt/mscphub/share/help/mscphub.hlb` | The help library, English |
@@ -1654,7 +1702,7 @@ The map has a version in register 0. A change of the map raises it.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Seconds since the server started |
-| 10 | 4 | Version of the server, text: X01-17 |
+| 10 | 4 | Version of the server, text: X01-18 |
 | 14 | 4 | /NODE, text |
 | 18 | 8 | /INTERFACE, text |
 | 100 | 4 | Frames received |
@@ -1732,4 +1780,4 @@ The function 2B/0E answers the basic objects:
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-17 |
+| 2 | MajorMinorRevision | X01-18 |

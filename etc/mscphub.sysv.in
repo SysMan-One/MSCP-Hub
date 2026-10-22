@@ -1,0 +1,189 @@
+#!/bin/sh
+#++
+#  MODULE:		etc/mscphub.sysv.in
+#  IDENT:		X01-18
+#  REV:			1.18.0
+#
+#  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
+#
+#  ABSTRACT:		Template of the System V init script of the server (Devuan, Slackware, a board
+#			with sysvinit or the init of busybox).  CMake fills in the paths at
+#			configuration time and installs the result as @MH_INITDIR@/mscphub; the next
+#			installation overwrites it.  To alter how the server is started, set the
+#			variables below in /etc/default/mscphub:
+#
+#			  MSCPHUB_CONFIG	the parameter file, @MH_CONFFILE@
+#			  MSCPHUB_LOG		where its messages go, /var/log/mscphub.log
+#			  MSCPHUB_CPUS		the CPUs it runs on, as taskset -c takes them
+#
+#			The script is installed and NOT linked into the runlevels: a server that
+#			starts on its own begins to talk to the VMScluster on its LAN, and that is for
+#			the administrator to decide:
+#
+#			  update-rc.d mscphub defaults		(Devuan, Debian)
+#			  /etc/init.d/mscphub start
+#
+#			Nothing starts the server again when it fails; see the log.  The action
+#			report sends it SIGUSR1: the state and the counters go to the log.
+#
+#			Only the shell of POSIX and kill: no start-stop-daemon, which not every system
+#			has.  The exit codes are those of the LSB.
+#
+#  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#  CREATION DATE:	22-OCT-2026
+#
+#  MODIFICATION HISTORY:
+#
+#		22-OCT-2026	RRL	X01-18 : Initial revision.
+#
+#--
+#
+### BEGIN INIT INFO
+# Provides:		mscphub
+# Required-Start:	$network $local_fs $remote_fs
+# Required-Stop:	$network $local_fs $remote_fs
+# Should-Start:		$syslog
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	MSCP disk server for OpenVMS nodes
+# Description:		MSCPHUB serves Linux files and block devices to the OpenVMS
+#			nodes of a VMScluster as MSCP disks, over NISCA.
+### END INIT INFO
+
+NAME=mscphub
+PROGRAM=@MH_FULL_SBINDIR@/mscphub
+
+[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+
+: ${MSCPHUB_CONFIG:=@MH_CONFFILE@}
+: ${MSCPHUB_LOG:=/var/log/mscphub.log}
+: ${MSCPHUB_PIDFILE:=/var/run/$NAME.pid}
+
+#
+#  The PID of the server, when it runs: the file names it and that process is the server - not
+#  another one that got the number after a crash
+#
+running ()
+{
+	[ -r "$MSCPHUB_PIDFILE" ] || return 1
+	PID=`cat "$MSCPHUB_PIDFILE"`
+	[ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && [ "`cat /proc/$PID/comm 2>/dev/null`" = "$NAME" ]
+}
+
+start ()
+{
+	if running
+	then
+		echo "$NAME is running, PID $PID"
+		return 0
+	fi
+
+	if [ ! -f "$MSCPHUB_CONFIG" ]
+	then
+		echo "$NAME: $MSCPHUB_CONFIG not found; make it from $MSCPHUB_CONFIG.example"
+		return 6
+	fi
+
+	[ -x "$PROGRAM" ] || return 5
+
+	PIN=
+	if [ -n "$MSCPHUB_CPUS" ]
+	then
+		TASKSET=`command -v taskset`
+		[ -n "$TASKSET" ] || { echo "$NAME: MSCPHUB_CPUS is given, but there is no taskset"; return 6; }
+		PIN="$TASKSET -c $MSCPHUB_CPUS"
+	fi
+
+	#
+	#  In the background, away from the terminal: nohup and taskset each put the next program
+	#  in their place, so $! is the PID of the server.  The messages of the standard error go
+	#  to the log; /LOGFILE in the parameter file sends them to a file of its own instead.
+	#
+	printf "Starting %s: " $NAME
+	nohup $PIN "$PROGRAM" "/CONFIG=$MSCPHUB_CONFIG" </dev/null >>"$MSCPHUB_LOG" 2>&1 &
+	echo $! >"$MSCPHUB_PIDFILE"
+
+	#
+	#  A wrong parameter stops the server at once: say so here, not only in the log
+	#
+	sleep 1
+	if running
+	then
+		echo "PID $PID"
+		return 0
+	fi
+
+	echo "failed, see $MSCPHUB_LOG:"
+	tail -3 "$MSCPHUB_LOG"
+	rm -f "$MSCPHUB_PIDFILE"
+	return 1
+}
+
+#
+#  SIGTERM: the server says BYE to every node, so they close the virtual circuit at once; then
+#  it writes its counters.  15 seconds for it, as under systemd and OpenRC.
+#
+stop ()
+{
+	if ! running
+	then
+		echo "$NAME is not running"
+		rm -f "$MSCPHUB_PIDFILE"
+		return 0
+	fi
+
+	printf "Stopping %s: " $NAME
+	kill -TERM "$PID"
+
+	for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+	do
+		running || break
+		sleep 1
+	done
+
+	if running
+	then
+		kill -KILL "$PID"
+		echo "killed"
+	else
+		echo "done"
+	fi
+
+	rm -f "$MSCPHUB_PIDFILE"
+	return 0
+}
+
+status ()
+{
+	if running
+	then
+		echo "$NAME is running, PID $PID"
+		return 0
+	fi
+
+	if [ -f "$MSCPHUB_PIDFILE" ]
+	then
+		echo "$NAME is dead, $MSCPHUB_PIDFILE is left"
+		return 1
+	fi
+
+	echo "$NAME is not running"
+	return 3
+}
+
+report ()
+{
+	running || { echo "$NAME is not running"; return 7; }
+	kill -USR1 "$PID" && echo "$NAME has written its state and counters to $MSCPHUB_LOG"
+}
+
+case "$1" in
+	start)			start ;;
+	stop)			stop ;;
+	restart|force-reload)	stop; start ;;
+	status)			status ;;
+	report)			report ;;
+	*)			echo "Usage: $0 {start|stop|restart|force-reload|status|report}"
+				exit 2 ;;
+esac
