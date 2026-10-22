@@ -450,12 +450,12 @@ send SIGUSR1 before and after it and subtract.
 
 The installation puts the unit mscphub.service in place, but does not
 enable it: a server that starts by itself talks to the cluster on its
-LAN at once. The unit reads /etc/opt/mscphub/mscphub.conf and does
+LAN at once. The unit reads /etc/mscphub/mscphub.conf and does
 not start without it.
 
 ```
-# cp /etc/opt/mscphub/mscphub.conf.example /etc/opt/mscphub/mscphub.conf
-# vi /etc/opt/mscphub/mscphub.conf
+# cp /etc/mscphub/mscphub.conf.example /etc/mscphub/mscphub.conf
+# vi /etc/mscphub/mscphub.conf
 # systemctl enable --now mscphub
 # journalctl -u mscphub -f
 ```

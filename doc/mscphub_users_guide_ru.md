@@ -2,10 +2,10 @@
 
 ## Руководство пользователя
 
-    Номер издания:      MSCPHUB-UG-0118-RUS
-    Версия программы:   MSCPHUB Version X01-18
+    Номер издания:      MSCPHUB-UG-0119-RUS
+    Версия программы:   MSCPHUB Version X01-19
     Операционная среда: Linux
-    Правка:             Заменяет русское руководство пользователя MSCPHUB версии X01-17.
+    Правка:             Заменяет русское руководство пользователя MSCPHUB версии X01-18.
     Дата:               22-OCT-2026
 
 ---
@@ -206,8 +206,8 @@ MSCPHUB собирается из комплекта `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-16.tar.gz
-# cd MSCPHUB-X01-16
+# tar xzf MSCPHUB-X01-19.tar.gz
+# cd MSCPHUB-X01-19
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -223,12 +223,19 @@ MSCPHUB собирается из комплекта `MSCPHUB-`*ident*`.tar.gz`:
 | Файл | Что это |
 |---|---|
 | `/opt/mscphub/sbin/mscphub` | Сервер |
-| `/etc/opt/mscphub/mscphub.conf.example` | Образец файла параметров |
+| `/etc/mscphub/mscphub.conf.example` | Образец файла параметров |
 | `/lib/systemd/system/mscphub.service` | Юнит systemd; не включён |
 | `/etc/init.d/mscphub` | Или скрипт OpenRC либо System V init; не включён |
 | `/opt/mscphub/share/man/man8/mscphub.8` | Страница руководства |
 | `/opt/mscphub/share/help/mscphub.hlb` | Библиотека помощи (при пакете HELP) |
 | `/opt/mscphub/share/doc/mscphub/` | Руководства и README |
+
+До версии X01-18 файл параметров лежал в `/etc/opt/mscphub`. Сам он не переносится: установка
+предупреждает, пока он там, а сервер, запущенный службой, его не читает. Перенесите его один раз:
+
+```
+# mv /etc/opt/mscphub/mscphub.conf /etc/mscphub/
+```
 
 Сборка смотрит, что за компьютер, и ставит один вид службы:
 
@@ -260,7 +267,7 @@ export MANPATH=$MANPATH:/opt/mscphub/share/man
 # cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
 ```
 
-Файл параметров тогда находится в `/usr/local/etc`.
+Файл параметров тогда находится в `/usr/local/etc/mscphub`; `-DMH_CONFDIR=`*каталог* кладёт его в другое место.
 
 ## 2.6 Проверка установки
 
@@ -372,8 +379,8 @@ CD OpenVMS, файл ISO, отдаётся только для чтения, к�
 ## 3.3 Файл параметров
 
 ```
-# cp /etc/opt/mscphub/mscphub.conf.example /etc/opt/mscphub/mscphub.conf
-# vi /etc/opt/mscphub/mscphub.conf
+# cp /etc/mscphub/mscphub.conf.example /etc/mscphub/mscphub.conf
+# vi /etc/mscphub/mscphub.conf
 ```
 
 В файле по одному квалификатору на строке, как в командной строке. Строка, начинающаяся с `!`, —
@@ -406,7 +413,7 @@ CD OpenVMS, файл ISO, отдаётся только для чтения, к�
 любой сети:
 
 ```
-# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+# mscphub /CONFIG=/etc/mscphub/mscphub.conf /PASSIVE
 ```
 
 По истечении 4 секунд `/LISTEN` появляется по сообщению `NEWNODE` на каждый узел OpenVMS. Нажмите
@@ -425,7 +432,7 @@ CD OpenVMS, файл ISO, отдаётся только для чтения, к�
 ```
 
 Юнит не запускается при загрузке, пока вы его не включите, и не запускается без
-`/etc/opt/mscphub/mscphub.conf`. Так сделано намеренно: сервер, запустившийся сам, сразу начинает
+`/etc/mscphub/mscphub.conf`. Так сделано намеренно: сервер, запустившийся сам, сразу начинает
 говорить с кластером в своей сети.
 
 ## 4.2 Что показывает журнал при запуске
@@ -828,7 +835,7 @@ OpenVMS группы и обслуживает диски `/UNIT0`–`/UNIT7` д
 ### Примеры
 
 ```
-# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+# mscphub /CONFIG=/etc/mscphub/mscphub.conf /PASSIVE
 ```
 
 Запускает сервер с его файлом параметров только на прослушивание. Сервер сообщает о каждом узле,
@@ -1564,8 +1571,8 @@ MHMON читает копию состояния и счётчиков, кото
 |---|---|
 | `/opt/mscphub/sbin/mscphub` | Сервер |
 | `/opt/mscphub/sbin/mhmon` | Монитор (раздел 4.8) |
-| `/etc/opt/mscphub/mscphub.conf` | Файл параметров службы; ваш, никогда не перезаписывается |
-| `/etc/opt/mscphub/mscphub.conf.example` | Образец файла параметров |
+| `/etc/mscphub/mscphub.conf` | Файл параметров службы; ваш, никогда не перезаписывается |
+| `/etc/mscphub/mscphub.conf.example` | Образец файла параметров |
 | `/lib/systemd/system/mscphub.service` | Юнит systemd |
 | `/opt/mscphub/share/man/man8/mscphub.8` | Страница руководства |
 | `/lib/systemd/system/mscphub-t4.service` | Сборщик файлов T4; не включён |
@@ -1709,7 +1716,7 @@ ADDRESS.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Секунд с запуска сервера |
-| 10 | 4 | Версия сервера, текст: X01-18 |
+| 10 | 4 | Версия сервера, текст: X01-19 |
 | 14 | 4 | /NODE, текст |
 | 18 | 8 | /INTERFACE, текст |
 | 100 | 4 | Принято кадров |
@@ -1786,4 +1793,4 @@ ADDRESS.
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-18 |
+| 2 | MajorMinorRevision | X01-19 |

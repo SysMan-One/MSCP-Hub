@@ -2,10 +2,10 @@
 
 ## Руководство программиста
 
-    Номер издания:      MSCPHUB-PG-0118-RUS
-    Версия программы:   MSCPHUB Version X01-18
+    Номер издания:      MSCPHUB-PG-0119-RUS
+    Версия программы:   MSCPHUB Version X01-19
     Операционная среда: Linux
-    Правка:             Заменяет русское руководство программиста MSCPHUB версии X01-17.
+    Правка:             Заменяет русское руководство программиста MSCPHUB версии X01-18.
     Дата:               22-OCT-2026
 
 ---
@@ -672,6 +672,7 @@ if ( 0 > (a_port->sd = socket(AF_PACKET, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC
 | `MH_STRICT` | OFF | Предупреждения компилятора становятся ошибками |
 | `BUILD_TESTING` | ON | Тесты собираются |
 | `MH_SYSTEMD` | ON там, где работает systemd | Устанавливаются юниты systemd (но никогда не включаются) |
+| `MH_CONFDIR` | `/etc/mscphub` (`etc/mscphub` другого префикса) | Где лежит файл параметров службы |
 | `MH_INIT` | `OPENRC`, `SYSV` или `NONE`, по компьютеру | Скрипты init ставятся в `MH_INITDIR`, `/etc/init.d` (но никогда не включаются) |
 | `MH_PDF` | OFF | Руководства выводятся в PDF |
 

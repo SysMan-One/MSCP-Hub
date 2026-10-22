@@ -2,10 +2,10 @@
 
 ## User's Guide
 
-    Order Number:       MSCPHUB-UG-0118
-    Software Version:   MSCPHUB Version X01-18
+    Order Number:       MSCPHUB-UG-0119
+    Software Version:   MSCPHUB Version X01-19
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-17.
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-18.
     Date:               22-OCT-2026
 
 ---
@@ -206,8 +206,8 @@ MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-16.tar.gz
-# cd MSCPHUB-X01-16
+# tar xzf MSCPHUB-X01-19.tar.gz
+# cd MSCPHUB-X01-19
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -223,12 +223,20 @@ With the default prefix, `/opt/mscphub`:
 | File | What it is |
 |---|---|
 | `/opt/mscphub/sbin/mscphub` | The server |
-| `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
+| `/etc/mscphub/mscphub.conf.example` | A sample parameter file |
 | `/lib/systemd/system/mscphub.service` | The systemd unit; not enabled |
 | `/etc/init.d/mscphub` | Or the script of OpenRC or of System V init; not enabled |
 | `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
 | `/opt/mscphub/share/help/mscphub.hlb` | The help library (with the HELP package) |
 | `/opt/mscphub/share/doc/mscphub/` | The manuals and README |
+
+Up to Version X01-18 the parameter file was in `/etc/opt/mscphub`. It is not moved for you; the
+installation warns while it is there, and the server started by the service does not read it. Move
+it once:
+
+```
+# mv /etc/opt/mscphub/mscphub.conf /etc/mscphub/
+```
 
 The build looks at the computer and installs one kind of service:
 
@@ -260,7 +268,7 @@ Give the prefix when the build is configured:
 # cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
 ```
 
-The parameter file is then in `/usr/local/etc`.
+The parameter file is then in `/usr/local/etc/mscphub`; `-DMH_CONFDIR=`*directory* puts it elsewhere.
 
 ## 2.6 Verifying the Installation
 
@@ -370,8 +378,8 @@ The CD of OpenVMS, an ISO file, is served read only, as an RRD42:
 ## 3.3 The Parameter File
 
 ```
-# cp /etc/opt/mscphub/mscphub.conf.example /etc/opt/mscphub/mscphub.conf
-# vi /etc/opt/mscphub/mscphub.conf
+# cp /etc/mscphub/mscphub.conf.example /etc/mscphub/mscphub.conf
+# vi /etc/mscphub/mscphub.conf
 ```
 
 The file holds one qualifier on a line, as on the command line. A line that begins with `!` is a
@@ -404,7 +412,7 @@ Start the server by hand with `/PASSIVE`. It only listens and sends nothing, so 
 LAN:
 
 ```
-# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+# mscphub /CONFIG=/etc/mscphub/mscphub.conf /PASSIVE
 ```
 
 After the 4 seconds of `/LISTEN` there is a `NEWNODE` for every OpenVMS node. Press `Ctrl/C`. No
@@ -423,7 +431,7 @@ After the 4 seconds of `/LISTEN` there is a `NEWNODE` for every OpenVMS node. Pr
 ```
 
 The unit is not started at boot until you enable it, and it does not start without
-`/etc/opt/mscphub/mscphub.conf`. This is on purpose: a server that starts by itself talks to the
+`/etc/mscphub/mscphub.conf`. This is on purpose: a server that starts by itself talks to the
 cluster on its LAN at once.
 
 ## 4.2 What the Log Shows at Start
@@ -827,7 +835,7 @@ severity F.
 ### Examples
 
 ```
-# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+# mscphub /CONFIG=/etc/mscphub/mscphub.conf /PASSIVE
 ```
 
 Starts the server with its parameter file, to listen only. The server reports every node it sees
@@ -1557,8 +1565,8 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 |---|---|
 | `/opt/mscphub/sbin/mscphub` | The server |
 | `/opt/mscphub/sbin/mhmon` | The monitor (Section 4.8) |
-| `/etc/opt/mscphub/mscphub.conf` | The parameter file of the service; yours, never overwritten |
-| `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
+| `/etc/mscphub/mscphub.conf` | The parameter file of the service; yours, never overwritten |
+| `/etc/mscphub/mscphub.conf.example` | A sample parameter file |
 | `/lib/systemd/system/mscphub.service` | The systemd unit |
 | `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
 | `/lib/systemd/system/mscphub-t4.service` | The collector of T4 files; not enabled |
@@ -1702,7 +1710,7 @@ The map has a version in register 0. A change of the map raises it.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Seconds since the server started |
-| 10 | 4 | Version of the server, text: X01-18 |
+| 10 | 4 | Version of the server, text: X01-19 |
 | 14 | 4 | /NODE, text |
 | 18 | 8 | /INTERFACE, text |
 | 100 | 4 | Frames received |
@@ -1780,4 +1788,4 @@ The function 2B/0E answers the basic objects:
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-18 |
+| 2 | MajorMinorRevision | X01-19 |

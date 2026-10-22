@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-18"
-#define	__REV__		"1.18.0"
+#define	__IDENT__	"X01-19"
+#define	__REV__		"1.19.0"
 
 /*
 **++
@@ -58,6 +58,7 @@
 **		22-OCT-2026	RRL	X01-17 : the statistics block for MHMON every 100 ms; the counters
 **						over Modbus/TCP (/MODBUS), in a thread of their own.
 **		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
+**		22-OCT-2026	RRL	X01-19 : the parameter file in /etc/mscphub.
 **
 **--
 */

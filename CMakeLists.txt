@@ -21,6 +21,8 @@
 #		22-OCT-2026	RRL	X01-17 : the units of systemd only where systemd runs.
 #		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init where systemd
 #						does not run (MH_INIT).
+#		22-OCT-2026	RRL	X01-19 : the parameter file in /etc/mscphub (MH_CONFDIR), not
+#						/etc/opt/mscphub.
 #
 #---
 
@@ -51,9 +53,9 @@ project(MSCPHUB VERSION ${MH_VERSION} LANGUAGES C DESCRIPTION "MSCP disk server 
 
 #
 #	The server is a package of its own: by default it is installed under
-#	/opt/mscphub, and GNUInstallDirs, by the FHS, puts its configuration in
-#	/etc/opt/mscphub.  -DCMAKE_INSTALL_PREFIX=... still chooses another place.
-#	It must be set before GNUInstallDirs makes the full paths of it.
+#	/opt/mscphub, its configuration is in /etc/mscphub (MH_CONFDIR, below).
+#	-DCMAKE_INSTALL_PREFIX=... still chooses another place.  It must be set
+#	before GNUInstallDirs makes the full paths of it.
 #
 if ( CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
 	set(CMAKE_INSTALL_PREFIX "/opt/mscphub" CACHE PATH "Where MSCPHUB is installed" FORCE)
@@ -217,7 +219,19 @@ option(MH_SYSTEMD "Install the systemd units of the server (installed, never ena
 
 set(MH_SYSTEMDDIR "/lib/systemd/system" CACHE PATH "Where the systemd unit is installed")
 
-set(MH_CONFFILE		"${CMAKE_INSTALL_FULL_SYSCONFDIR}/mscphub.conf")
+#
+#	The parameter file: in /etc/mscphub, where the administrator looks for
+#	it and the backup of /etc takes it, for the default prefix and for /usr;
+#	in etc/mscphub of any other prefix - /usr/local/etc/mscphub
+#
+if ( CMAKE_INSTALL_PREFIX STREQUAL "/opt/mscphub" OR CMAKE_INSTALL_PREFIX STREQUAL "/usr" )
+	set(MH_K_CONFDIR "/etc/mscphub")
+else()
+	set(MH_K_CONFDIR "${CMAKE_INSTALL_FULL_SYSCONFDIR}/mscphub")
+endif()
+
+set(MH_CONFDIR		"${MH_K_CONFDIR}" CACHE PATH "Where the parameter file of the service is")
+set(MH_CONFFILE		"${MH_CONFDIR}/mscphub.conf")
 set(MH_FULL_SBINDIR	"${CMAKE_INSTALL_FULL_SBINDIR}")
 set(MH_FULL_DOCDIR	"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DOCDIR}")
 set(MH_FULL_HLBDIR	"${CMAKE_INSTALL_PREFIX}/${MH_HLBDIR}")
@@ -228,7 +242,16 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphub.8.in ${CMAKE_CURRENT_BINA
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mscphub.8 DESTINATION ${CMAKE_INSTALL_MANDIR}/man8)
 
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/etc/mscphub.conf.example DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR})
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/etc/mscphub.conf.example DESTINATION ${MH_CONFDIR})
+
+#
+#	Before X01-19 the parameter file was in /etc/opt/mscphub.  It is the
+#	administrator's and is not moved; the installation says where it goes.
+#
+install(CODE "
+	if ( \"\$ENV{DESTDIR}\" STREQUAL \"\" AND EXISTS /etc/opt/mscphub/mscphub.conf AND NOT EXISTS ${MH_CONFFILE} )
+		message(WARNING \"/etc/opt/mscphub/mscphub.conf is no longer read: move it to ${MH_CONFFILE}\")
+	endif()")
 
 if ( MH_SYSTEMD )
 	configure_file(${CMAKE_CURRENT_SOURCE_DIR}/etc/mscphub.service.in ${CMAKE_CURRENT_BINARY_DIR}/mscphub.service @ONLY)

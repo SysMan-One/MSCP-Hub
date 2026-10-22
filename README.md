@@ -27,7 +27,7 @@ and manuals in the manner of OpenVMS.
   and the counters as the MONITOR utility of OpenVMS does; `/RECORD` writes T4 style CSV for
   TLViz, `mscphub-t4.service` records every minute. `/MODBUS=port` serves the counters over
   Modbus/TCP.
-- Version: X01-18.
+- Version: X01-19.
 
 Small: no database, no interpreter, no framework - the server is about 300 KB and runs in a few
 megabytes, so the hub of a home VMScluster can be a Raspberry Pi or a NaPi-C board (RK3308,
@@ -55,7 +55,7 @@ cmake --install build
 
 The installation puts `mscphub` in `/opt/mscphub/sbin`, the unit
 `mscphub.service` in `/lib/systemd/system` (not enabled, and it does not start
-without `/etc/opt/mscphub/mscphub.conf`) - or, without systemd, a script of
+without `/etc/mscphub/mscphub.conf`) - or, without systemd, a script of
 OpenRC or System V init in `/etc/init.d`, not enabled either - a sample `mscphub.conf.example`, the
 manual page, the help libraries and the guides. `cmake --build build --target
 uninstall` removes what was installed; `--target dist` makes the kit of the
@@ -66,7 +66,7 @@ committed sources.
 Check the configuration first: `/PASSIVE` only listens and sends nothing.
 
 ```
-mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+mscphub /CONFIG=/etc/mscphub/mscphub.conf /PASSIVE
 ```
 
 Then run it as a service: see the User's Guide, Chapter 4.

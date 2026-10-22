@@ -2,10 +2,10 @@
 
 ## Programmer's Guide
 
-    Order Number:       MSCPHUB-PG-0118
-    Software Version:   MSCPHUB Version X01-18
+    Order Number:       MSCPHUB-PG-0119
+    Software Version:   MSCPHUB Version X01-19
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-17.
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-18.
     Date:               22-OCT-2026
 
 ---
@@ -667,6 +667,7 @@ fields it does not know.
 | `MH_STRICT` | OFF | Compiler warnings become errors |
 | `BUILD_TESTING` | ON | The tests are built |
 | `MH_SYSTEMD` | ON where systemd runs | The systemd units are installed (never enabled) |
+| `MH_CONFDIR` | `/etc/mscphub` (`etc/mscphub` of another prefix) | Where the parameter file of the service is |
 | `MH_INIT` | `OPENRC`, `SYSV` or `NONE`, by the host | The init scripts installed in `MH_INITDIR`, `/etc/init.d` (never enabled) |
 | `MH_PDF` | OFF | The manuals are rendered as PDF |
 

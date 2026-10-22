@@ -447,12 +447,12 @@ SIGUSR1 до и после него и вычтите.
 
 Установка кладёт юнит mscphub.service, но не включает его: сервер,
 запущенный сам по себе, сразу начинает разговаривать с кластером в
-своей сети. Юнит читает /etc/opt/mscphub/mscphub.conf и без него не
+своей сети. Юнит читает /etc/mscphub/mscphub.conf и без него не
 запускается.
 
 ```
-# cp /etc/opt/mscphub/mscphub.conf.example /etc/opt/mscphub/mscphub.conf
-# vi /etc/opt/mscphub/mscphub.conf
+# cp /etc/mscphub/mscphub.conf.example /etc/mscphub/mscphub.conf
+# vi /etc/mscphub/mscphub.conf
 # systemctl enable --now mscphub
 # journalctl -u mscphub -f
 ```
