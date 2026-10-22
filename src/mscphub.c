@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-15"
-#define	__REV__		"1.15.0"
+#define	__IDENT__	"X01-16"
+#define	__REV__		"1.16.0"
 
 /*
 **++
@@ -53,6 +53,8 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		22-OCT-2026	RRL	X01-16 : the manuals in the layout of DEC: a User's Guide and
+**						a Programmer's Guide, EN and RU, PDF by MH_PDF.
 **
 **--
 */

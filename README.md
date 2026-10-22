@@ -7,12 +7,21 @@ their own disks. To OpenVMS it looks like an HSC-style disk controller reached o
 NISCA (the PEDRIVER protocol, ethertype 60-07). It is not a VMScluster member and
 has no votes.
 
-- User's guide: [doc/mscphub_guide.md](doc/mscphub_guide.md) (EN),
-  [doc/mscphub_guide_ru.md](doc/mscphub_guide_ru.md) (RU) - install, configure,
-  run as a service, troubleshoot, step by step.
+Why: the VMScluster and the engineering culture of Digital Equipment Corporation are a
+heritage worth keeping at work. MSCPHUB lets OpenVMS nodes keep their disks on today's
+storage, and it is made the DEC way on purpose - messages, HELP, qualifiers, IDENTs, sources
+and manuals in the manner of OpenVMS.
+
+- User's Guide: [doc/mscphub_users_guide.md](doc/mscphub_users_guide.md) (EN),
+  [doc/mscphub_users_guide_ru.md](doc/mscphub_users_guide_ru.md) (RU) - install, configure,
+  operate, the command dictionary, every message, troubleshooting.
+- Programmer's Guide: [doc/mscphub_programmers_guide.md](doc/mscphub_programmers_guide.md)
+  (EN), [doc/mscphub_programmers_guide_ru.md](doc/mscphub_programmers_guide_ru.md) (RU) -
+  the design, the modules, the conventions of the sources, how to make a change.
+- Both as PDF beside them (`-DMH_PDF=ON` renders them again; needs pandoc and XeLaTeX).
 - Manual page: `man 8 mscphub`. Help library: `mscphub /HELP`; sources in
   `doc/mscphublib.md` (EN) and `doc/mscphublib_ru.md` (RU).
-- Version: X01-15.
+- Version: X01-16.
 
 What it does: up to 8 disks per server (files or block devices, 512 or 4096-octet
 sectors, read-only units such as a CD image), READ, WRITE, ERASE and COMPARE over
@@ -48,7 +57,7 @@ Check the configuration first: `/PASSIVE` only listens and sends nothing.
 mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
 ```
 
-Then run it as a service: see the guide.
+Then run it as a service: see the User's Guide, Chapter 4.
 
 ## Author
 

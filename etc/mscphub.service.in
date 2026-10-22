@@ -23,13 +23,14 @@
 #  MODIFICATION HISTORY:
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
+#		22-OCT-2026	RRL	X01-16 : the User's Guide is mscphub_users_guide.md.
 #
 #--
 #
 
 [Unit]
 Description=MSCPHUB - MSCP disk server for OpenVMS nodes
-Documentation=man:mscphub(8) file:@MH_FULL_DOCDIR@/mscphub_guide.md
+Documentation=man:mscphub(8) file:@MH_FULL_DOCDIR@/mscphub_users_guide.md
 ConditionPathExists=@MH_CONFFILE@
 #
 #  The interface must be there and up; the server reads its address and MTU at start-up only.

@@ -1,0 +1,1235 @@
+# MSCPHUB MSCP Disk Server for OpenVMS Nodes
+
+## User's Guide
+
+    Order Number:       MSCPHUB-UG-0116
+    Software Version:   MSCPHUB Version X01-16
+    Operating System:   Linux
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-15.
+    Date:               22-OCT-2026
+
+---
+
+# Preface
+
+## Intended Audience
+
+This manual is for the system manager who installs MSCPHUB on a Linux computer and gives its disks
+to OpenVMS nodes. It assumes that the reader can work as root on Linux and as SYSTEM on OpenVMS, and
+that the OpenVMS nodes already form a VMScluster over the LAN. Nothing else is assumed.
+
+The programmer who is to alter the server wants the *MSCPHUB Programmer's Guide* instead. This
+manual says nothing about how the server is built inside.
+
+## Why MSCPHUB Exists
+
+For forty years the VMScluster has shown how computers share their disks: every node sees every
+disk, a disk is served by whoever has it, and the cluster goes on when a member goes down. The
+machines of Digital Equipment Corporation are leaving the machine rooms. The systems they ran, and
+the engineering culture they were made with, should not leave with them.
+
+MSCPHUB is one part of the work to keep that heritage alive and at work. It lets OpenVMS nodes - on
+Alpha, on Integrity, on x86, or emulated - keep their disks on the storage of today: a file, a
+partition, an LVM volume of a Linux computer. OpenVMS is not changed in any way; to OpenVMS the
+server is a disk controller of the cluster, like an HSC.
+
+MSCPHUB is also made the DEC way, on purpose. Its messages have the OpenVMS form and severities, its
+parameters are qualifiers, it has a HELP library, its versions are IDENTs, its sources follow the
+conventions of the OpenVMS sources, and this manual is laid out like the manuals of OpenVMS. This is
+not decoration. A documented decision for everything, a message for every condition, nothing that
+the operator has to guess - that way of working is part of the heritage, and it is kept by being
+used.
+
+## Document Structure
+
+This manual contains the following chapters and appendixes:
+
+| Part | Contents |
+|---|---|
+| Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do |
+| Chapter 2 | Installing the server |
+| Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
+| Chapter 4 | Running the server and using its disks on OpenVMS |
+| Chapter 5 | Contains the command dictionary: the `mscphub` command and all its qualifiers |
+| Chapter 6 | Describes the format of a message and lists every message with what to do about it |
+| Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
+| Appendix A | Lists the files installed and used |
+| Appendix B | Lists the limits of the server |
+
+The reader who installs the server for the first time wants Chapters 2, 3 and 4, in that order. The
+reader who holds a message wants Chapter 6, and the one who holds a symptom, Chapter 7.
+
+## Related Documents
+
+* *OpenVMS Cluster Systems*
+* *Guidelines for OpenVMS Cluster Configurations*
+* *OpenVMS System Manager's Manual*
+* *MSCPHUB Programmer's Guide*
+* The manual page `mscphub(8)` and the help library of the server (`mscphub /HELP`)
+
+## Conventions
+
+The following conventions are used in this manual:
+
+| Convention | Meaning |
+|---|---|
+| `#` | The prompt of the Linux shell of root. Text after the prompt is entered by the user. |
+| `$` | The DCL prompt of an OpenVMS node. Text after the prompt is entered by the user. |
+| *italics* | A term being defined, or a value to be replaced by one of your own. |
+| `UPPERCASE` | A qualifier, a keyword, an OpenVMS command, or the identification of a message. |
+| `[ ]` | An optional part. Do not type the brackets. |
+| `\|` | A choice of one of the items it separates. |
+| `...` | The part before it may be repeated. |
+| `Ctrl/C` | Hold down the Ctrl key and press C. |
+
+Qualifiers are shown in uppercase; `mscphub` takes them in any case.
+
+**Note**
+
+> Sample output in this manual is reproduced as the server produces it. The first part of a line
+> of the log - the date, the process and the routine - is left out where it does not matter.
+
+---
+
+# Chapter 1
+# Introduction
+
+## 1.1 What MSCPHUB Does
+
+MSCPHUB is an MSCP disk server that runs on Linux. It makes files and block devices of a Linux
+computer available to the OpenVMS nodes on the same LAN as disks of their own. An OpenVMS node sees
+such a disk with `SHOW DEVICE`, initializes it with `INITIALIZE` and mounts it with `MOUNT`; `COPY`,
+`BACKUP` and `ANALYZE/DISK_STRUCTURE` work on it as on a local disk. Several nodes can mount one disk
+at the same time with `MOUNT/CLUSTER`.
+
+Nothing is installed on OpenVMS, and no OpenVMS parameter is changed.
+
+## 1.2 How an OpenVMS Node Sees the Server
+
+The server speaks NISCA, the cluster protocol that PEDRIVER speaks on the LAN (Ethernet type
+60-07). To an OpenVMS node it is a node of the cluster that has no votes and runs no connection
+manager - in the way an HSC controller is on a CI. It is therefore never a member of the VMScluster:
+it cannot take part in a quorum, it cannot hang the cluster, and a node can lose it without a state
+transition.
+
+The server has a name (SCSNODE) and a system ID (SCSSYSTEMID) of its own. The OpenVMS node shows it
+in `SHOW CLUSTER` and in `MCR SCACP SHOW CHANNEL`, opens a virtual circuit to it, and connects its
+disk class driver to the disk server of MSCPHUB, `MSCP$DISK`. The disks appear on the node as
+`$`*n*`$DK`*cn* (for example `$42$DKA100`), *n* being the allocation class of the server.
+
+## 1.3 What Is Served
+
+| Item | What the server does |
+|---|---|
+| Disks | Up to 8 per server (`/UNIT0` to `/UNIT7`). A disk is a Linux file or a block device: a whole disk, a partition, an LVM volume, a loop device, an iSCSI LUN. |
+| Sectors | Devices of 512-octet and of 4096-octet sectors. OpenVMS always works in blocks of 512 octets; the server does the rest. |
+| Read-only disks | A disk can be served read only - for example the CD image of OpenVMS, as an RRD42. |
+| Commands | READ, WRITE, ERASE, COMPARE HOST DATA, ONLINE, AVAILABLE, GET UNIT STATUS and the other MSCP commands an OpenVMS disk class driver sends. |
+| Nodes | Every OpenVMS node of the group on the LAN, at the same time. |
+
+## 1.4 When a WRITE Is Done
+
+OpenVMS never asks a disk to empty a cache of its own: when a disk says that a WRITE is done,
+OpenVMS takes it that the data is on the medium. The server therefore answers a WRITE only when its
+data is on the disk of the Linux computer. This is the default and it is safe against a crash or a
+power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for tests only.
+
+## 1.5 What MSCPHUB Does Not Do
+
+* It is not a member of the VMScluster and has no votes.
+* It serves disks only: no tapes, and no boot of diskless satellites.
+* It cannot yet be a member disk of a shadow set.
+* It works over the LAN only. A cluster over IP (IPCI) is not supported.
+* It uses one LAN adapter.
+
+MSCPHUB is verified with OpenVMS Alpha Version 8.3. Other versions that cluster over the LAN with
+PEDRIVER are expected to work.
+
+---
+
+# Chapter 2
+# Installation
+
+## 2.1 Requirements
+
+* A Linux computer with a kernel of the last five years (5.10 or later; Debian 11 or later).
+* An Ethernet connection to the LAN of the OpenVMS nodes: the same switch, VLAN or bridge.
+* The StarLet package, version 1.6 or later, installed.
+* The packages `cmake`, `gcc`, `pkg-config` and `liburing-dev`.
+* Optionally the HELP package: with it, `/HELP` displays the whole help library.
+* root on Linux.
+
+## 2.2 Building and Installing
+
+MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
+
+```
+# apt install cmake gcc pkg-config liburing-dev
+# tar xzf MSCPHUB-X01-16.tar.gz
+# cd MSCPHUB-X01-16
+# cmake -S . -B build
+# cmake --build build -j
+# ctest --test-dir build
+# cmake --install build
+```
+
+Install only when `ctest` says `100% tests passed`.
+
+## 2.3 What Is Installed
+
+With the default prefix, `/opt/mscphub`:
+
+| File | What it is |
+|---|---|
+| `/opt/mscphub/sbin/mscphub` | The server |
+| `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
+| `/lib/systemd/system/mscphub.service` | The systemd unit; not enabled |
+| `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
+| `/opt/mscphub/share/help/mscphub.hlb` | The help library (with the HELP package) |
+| `/opt/mscphub/share/doc/mscphub/` | The manuals and README |
+
+## 2.4 Search Paths
+
+The server and its manual page are not on the search paths of the shell. Add them, for example in
+`/root/.profile`:
+
+```
+export PATH=$PATH:/opt/mscphub/sbin
+export MANPATH=$MANPATH:/opt/mscphub/share/man
+```
+
+## 2.5 Installing in Another Place
+
+Give the prefix when the build is configured:
+
+```
+# cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr/local
+```
+
+The parameter file is then in `/usr/local/etc`.
+
+## 2.6 Verifying the Installation
+
+```
+# mscphub /HELP
+```
+
+displays the description of the server. No OpenVMS node is needed for it.
+
+## 2.7 Removal
+
+From the build directory of the installation:
+
+```
+# cmake --build build --target uninstall
+```
+
+This removes what that installation put in place, and nothing else. The parameter file
+`mscphub.conf` is yours and is left.
+
+---
+
+# Chapter 3
+# Configuration
+
+## 3.1 The Facts of the Cluster
+
+Write down four things on one OpenVMS node of the cluster.
+
+**The group number:**
+
+```
+$ MCR SYSMAN CONFIGURATION SHOW CLUSTER_AUTHORIZATION
+```
+
+**The password hash.** It is in `SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT`:
+
+```
+$ DUMP SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT
+```
+
+Take the quadword at offset 8 and write its octets from the lowest one. The longwords
+`00000000 8EF54F24` there give `/AUTHORIZE=5A3C9E1700000000`.
+
+**The names and the system IDs in use:**
+
+```
+$ SHOW CLUSTER
+$ MCR SYSGEN SHOW SCSSYSTEMID
+```
+
+Choose for the server a name (`/NODE`, up to 6 characters) and a system ID (`/SYSTEMID`, 1 to 65535)
+that no node of the cluster has. The server checks this itself when it starts, and stops if it
+finds a clash.
+
+**An allocation class** for the disks, 1 to 255, that the cluster does not use for disks of the same
+names. With `/ALLOCLASS=42` the disk `DKA100` is `$42$DKA100:` on every OpenVMS node.
+
+## 3.2 Preparing the Disks
+
+### 3.2.1 A File
+
+A new empty file of 2 GB:
+
+```
+# mkdir -p /srv/mscphub
+# truncate -s 2G /srv/mscphub/dka100.img
+```
+
+Such a file is *sparse*: it takes no space yet, and the first write to every part of it is slower.
+For a disk that must be fast, write the file full once instead:
+
+```
+# dd if=/dev/zero of=/srv/mscphub/dka100.img bs=1M count=2048
+```
+
+The size of the file when the server starts, in blocks of 512 octets, is the size of the disk.
+
+Put the files on ext4 or XFS. The server reads and writes them with direct I/O, as it does a block
+device. On a file system without direct I/O (tmpfs of an old kernel, some network file systems) it
+uses the page cache and says `NODIRECT`; the disk works, but every write costs more.
+
+### 3.2.2 A Block Device
+
+A whole disk, a partition, an LVM volume, a loop device or an iSCSI LUN. It must not be mounted or
+used by Linux: the server takes it for itself and refuses one that is in use (`DEVBUSY`). A partition
+or an LVM volume is a little faster than a file.
+
+### 3.2.3 A Disk of 4096-Octet Sectors
+
+Such a disk works. A partition on it must start on a physical sector, or every write is slow (the
+server says `MISALIGN`); `parted` and `fdisk` start partitions on 1 MB by default. Section 4.3 says
+how to initialize such a disk on OpenVMS.
+
+### 3.2.4 A CD Image
+
+The CD of OpenVMS, an ISO file, is served read only, as an RRD42:
+
+```
+/UNIT2=DKA300,/srv/mscphub/AXPVMS083.iso,RO
+```
+
+**Caution**
+
+> Never give one file or device to two servers, and never mount it on Linux while it is served.
+
+## 3.3 The Parameter File
+
+```
+# cp /etc/opt/mscphub/mscphub.conf.example /etc/opt/mscphub/mscphub.conf
+# vi /etc/opt/mscphub/mscphub.conf
+```
+
+The file holds one qualifier on a line, as on the command line. A line that begins with `!` is a
+comment. A complete example:
+
+```
+! MSCPHUB of our cluster
+/INTERFACE=eth1
+/NODE=MHUB
+/SYSTEMID=65200
+/GROUP=4242
+/AUTHORIZE=5A3C9E1700000000
+/ALLOCLASS=42
+/UNIT0=DKA100,/srv/mscphub/dka100.img
+/UNIT1=DKA200,/dev/vg0/vmsdata
+/UNIT2=DKA300,/srv/mscphub/AXPVMS083.iso,RO
+```
+
+Every qualifier is described in Chapter 5.
+
+**Note**
+
+> A qualifier the server does not know is passed over with a warning
+> (`Skip unrecognized option`), and the server runs without it. Read the log after every change of
+> the file.
+
+## 3.4 Checking the Configuration
+
+Start the server by hand with `/PASSIVE`. It only listens and sends nothing, so it is safe on any
+LAN:
+
+```
+# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+```
+
+After the 4 seconds of `/LISTEN` there is a `NEWNODE` for every OpenVMS node. Press `Ctrl/C`. No
+`NEWNODE`: see Chapter 7.
+
+---
+
+# Chapter 4
+# Operation
+
+## 4.1 Starting the Server
+
+```
+# systemctl enable --now mscphub
+# journalctl -u mscphub -f
+```
+
+The unit is not started at boot until you enable it, and it does not start without
+`/etc/opt/mscphub/mscphub.conf`. This is on purpose: a server that starts by itself talks to the
+cluster on its LAN at once.
+
+## 4.2 What the Log Shows at Start
+
+In this order:
+
+```
+%MSCPHUB-I-UNITCFG, unit $42$DKA100 is /srv/mscphub/dka100.img, 4194304 blocks, a file, sector 512, RZ29, SLUN 4000
+%MSCPHUB-I-STARTUP, MSCPHUB X01-16, node MHUB, system ID 65200, group 4242, on eth1 (8E-4E-65-DB-5C-B3)
+%MSCPHUB-I-LISTEN, listening 4 seconds before announcing the node
+%MSCPHUB-I-NEWNODE, node ALPHA1, system ID 65534, adapter 08-00-2B-E5-40-01, CC V1.6 (104 octets)
+%MSCPHUB-I-ANNOUNCE, node MHUB announced on eth1, 1 other node seen in group 4242
+%MSCPHUB-I-CHOPEN, channel to node ALPHA1 (65534) is open, CC V1.6, pipe quota 16, buffer 1426, services 0007/0000
+%MSCPHUB-I-VCOPEN, virtual circuit to node ALPHA1 (65534) is open: VMS V8.3 on ALPH, datagram 576, message 216
+%MSCPHUB-I-CONOPEN, connection VMS$DISK_CL_DRVR of ALPHA1 (65534) to MSCP$DISK is open, credit 10/16
+```
+
+`CONOPEN` means that the disk class driver of the node has connected: the disks are there.
+
+## 4.3 Using the Disks on OpenVMS
+
+A few seconds after `CONOPEN`:
+
+```
+$ SHOW DEVICE $42$DKA
+$ INITIALIZE $42$DKA100: DATA1
+$ MOUNT/SYSTEM $42$DKA100: DATA1
+$ COPY *.* $42$DKA100:[000000]
+```
+
+On a Linux disk of 4096-octet sectors, give the cluster size yourself, 8 or a multiple of 8:
+
+```
+$ INITIALIZE/CLUSTER=16 $42$DKA100: DATA1
+```
+
+Then the files fill whole sectors and are written without being read first. OpenVMS takes 16 by
+itself on a disk of more than 50000 blocks, and 1 on a smaller one.
+
+Two or more nodes can use one disk together:
+
+```
+$ MOUNT/CLUSTER $42$DKA100: DATA1
+```
+
+## 4.4 Displaying the State of the Server
+
+```
+# systemctl kill -s USR1 mscphub
+# journalctl -u mscphub -n 40
+```
+
+On `SIGUSR1` the server writes to the log, in this order:
+
+| Message | What it reports |
+|---|---|
+| `UPTIME` | The version, the name, how long the server has run |
+| `NODESTATS` | One for each node: the channel, the virtual circuit, the connections open |
+| `STATS` | The frames received and sent |
+| `TRSTATS` | The transport: packets, retransmissions, duplicates |
+| `ACKSTATS` | How the packets of the nodes were acknowledged |
+| `BLKSTATS` | The data moved |
+| `MSCPSTATS` | Commands in progress and the data buffers in use |
+| `UNITSTATS` | One for each disk: hosts, commands, reads and writes |
+| `BKSTATS` | One for each disk: the work of the Linux disk |
+| `LATSTATS` | One for each disk and for each of READ and WRITE: how long the commands took |
+
+The counters run from the start of the server. To measure a test, send `SIGUSR1` before and after it
+and subtract. Chapter 6 describes each message.
+
+## 4.5 Stopping the Server
+
+Dismount its disks on OpenVMS first. Then:
+
+```
+# systemctl stop mscphub
+```
+
+The server says `HOSTSHUT` to every node and `BYE` to the group; the OpenVMS nodes close their
+circuits to it at once. Last, it writes its state and its counters to the log, as on `SIGUSR1`.
+
+A disk still mounted when the server stops waits for it - the node tries
+again - and the work goes on when the server comes back.
+
+## 4.6 Altering the Service
+
+To pin the server to a CPU, or to change its start line, use a drop-in, not the unit file:
+
+```
+# systemctl edit mscphub
+[Service]
+CPUAffinity=3
+```
+
+## 4.7 Backing Up the Disks
+
+Back up an image file as you back up any disk: with the server stopped, or with the disk dismounted
+on all OpenVMS nodes. A copy of a file that a node is writing is not a consistent disk.
+
+---
+
+# Chapter 5
+# Command Dictionary
+
+This chapter describes the `mscphub` command and each of its qualifiers.
+
+A qualifier is given on the command line or, one on a line, in the file of `/CONFIG`. `--`*NAME*`=`*value*
+may be written for `/`*NAME*`=`*value*. A qualifier the server does not know is passed over with a
+warning.
+
+---
+
+## MSCPHUB
+
+Starts the MSCP disk server.
+
+### Format
+
+      mscphub /CONFIG=file-spec
+      mscphub /INTERFACE=name /NODE=name /SYSTEMID=n /GROUP=n /AUTHORIZE=hex [/qualifier...]
+      mscphub /HELP[="topic..."]
+
+### Parameters
+
+None.
+
+### Description
+
+The server announces itself on the LAN of `/INTERFACE` after `/LISTEN` seconds, and checks that no
+node already uses its name or its system ID. It opens a channel and a virtual circuit to every
+OpenVMS node of the group, and serves the disks of `/UNIT0` to `/UNIT7` to every node that connects
+to its disk server. It runs until it receives `SIGINT` or `SIGTERM`.
+
+The server needs `CAP_NET_RAW`: run it as root. The qualifiers `/INTERFACE`, `/NODE`, `/SYSTEMID`,
+`/GROUP` and `/AUTHORIZE` are required.
+
+The signals the server takes:
+
+| Signal | Action |
+|---|---|
+| `SIGINT`, `SIGTERM` | Stop the server (message `SHUTDOWN`) |
+| `SIGUSR1` | Write the state and the counters to the log (Section 4.4) |
+
+The image returns 0 to the shell when it stops on a signal, and 1 when it stops on a condition of
+severity F.
+
+### Qualifiers
+
+  **/ACK=**{`HOLD` | `FLUSH`}
+
+    Specifies when the server acknowledges the packets of a node in a packet of its own. Most of the
+    time the acknowledgement travels in a packet of the server - the answer to a command, the data of
+    a READ. When the server has nothing to send, it sends the acknowledgement alone.
+
+    HOLD sends the acknowledgement alone only when the node asks for it at once, after 4 packets, or
+    after 20 ms at most; otherwise it waits for the answer of the server. FLUSH sends it as soon as the
+    server has taken all the frames that came in.
+
+    The default is /ACK=HOLD. HOLD sends far fewer packets; the messages ACKSTATS and LATSTATS compare
+    the two.
+
+  **/ALLOCLASS=***n*
+
+    Specifies the allocation class of the server, 0 to 255. With /ALLOCLASS=42 the OpenVMS nodes name
+    the disk DKA100 of the server `$42$DKA100`; with 0 they name it *node*`$DKA100`, after the SCSNODE
+    of the server. The default is 0.
+
+    Do not change it while OpenVMS nodes use the disks, and do not give a class that the cluster uses
+    for disks of the same names.
+
+  **/AUTHORIZE=***hex*
+
+    Specifies the cluster password, as the 8-octet hash OpenVMS keeps in
+    `SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT`: 16 hexadecimal digits, the octets from the lowest one.
+    Required. Section 3.1 says how to read it.
+
+  **/CONFIG=***file-spec*
+
+    Reads the qualifiers from the file named, one on a line. A line that begins with `!` is a comment.
+    The qualifiers of the command line are taken too.
+
+  **/CREDITS=***n*
+
+    Specifies how many commands each OpenVMS node may have in progress on the disk server at a time,
+    2 to 64. The value is given to a node when it connects. The default is 16.
+
+  **/GROUP=***n*
+
+    Specifies the cluster group number, 1 to 65279. Required.
+
+  **/HELP**[**=***"topic..."*]
+
+    Displays the help library of the server: the whole description, or the topic named, and stops.
+
+  **/INTERFACE=***name*
+
+    Specifies the Linux interface the OpenVMS nodes are on: an Ethernet adapter, a bridge, a VLAN, a
+    tap device in a bridge. Required. The MAC address of the interface is not changed.
+
+  **/LISTEN=***seconds*
+
+    Specifies how long the server listens before it sends anything, 1 to 60 seconds. In that time it
+    learns the nodes of the LAN from their HELLO messages; a node that uses the name or the system ID
+    of the server stops it. The default is 4.
+
+  **/LOGFILE=***file-spec*
+
+    Writes the messages to the file named. By default they go to the standard error, which systemd
+    keeps in its journal.
+
+  **/NODE=***name*
+
+    Specifies the SCSNODE of the server, 1 to 6 of the characters A-Z, 0-9, `$` and `_`. Required. It
+    must not be the name of any other node of the group.
+
+  **/PASSIVE**
+
+    The server only listens and reports the nodes it sees. It opens no channel and sends nothing at
+    all. Safe on any LAN, for example to look at a production cluster.
+
+  **/SYNC=**{`DSYNC` | `GROUP` | `NONE`}
+
+    Specifies how a WRITE is made durable before it is answered.
+
+    DSYNC writes every WRITE to the medium by itself. GROUP makes the writes that end while the disk
+    is being flushed wait for the next flush, and answers them together: fewer flushes when many
+    nodes write at once, and as safe as DSYNC. NONE is the same as /UNSAFE.
+
+    The default is /SYNC=DSYNC.
+
+  **/SYSTEMID=***n*
+
+    Specifies the SCSSYSTEMID of the server, 1 to 65535. Required. It must differ from that of every
+    other node of the group; on the LAN the nodes are told apart by the low 16 bits of the
+    SCSSYSTEMID only.
+
+  **/TIMEZONE=**{`LOCAL` | `UTC` | [`+`|`-`]*hh*[`:`*mm*]}
+
+    Specifies the zone of the time the server tells the nodes when it opens a circuit. `SHOW CLUSTER`
+    and SCACP show it as the time the server came up. LOCAL is the zone of the Linux computer, summer
+    time and all. The default is LOCAL. Only the operator sees this time; the protocol works with any
+    zone.
+
+  **/TRACE**
+
+    Writes every frame received and every step of every channel to the log. Use it for a short time
+    only.
+
+  **/UNIT0=***name*,*path*[,`RO`][,`MEDIA=`*medium*][,`SECTOR=`*octets*] ... **/UNIT7=**...
+
+    Specifies a disk. *name* is `DK`*cn*: a controller letter A to Z and a number 0 to 9999, for
+    example DKA100. *path* is a Linux file or a block device (Section 3.2).
+
+    The options, in any order:
+
+    `RO` - read only. The node mounts the disk write-locked.
+
+    `MEDIA=`*medium* - what the node is told the disk is: two or three letters and a number. The
+    default is RZ29, and RRD42 with RO.
+
+    `SECTOR=`*octets* - takes a file as a disk of 512, 1024, 2048 or 4096-octet sectors. For tests of
+    4K disks only; a block device tells its sector itself.
+
+    The server takes a file for itself with a lock, and opens a block device for exclusive use: a
+    second server cannot serve it, and a device mounted on Linux is refused (`DEVBUSY`).
+
+  **/UNSAFE**
+
+    Answers a WRITE as soon as Linux has taken the data, before it is on the disk. Faster, but a crash
+    or a power failure of the Linux computer can lose data an OpenVMS node believes is written. For
+    tests only. The server says `UNSAFE` when it starts.
+
+### Examples
+
+```
+# mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /PASSIVE
+```
+
+Starts the server with its parameter file, to listen only. The server reports every node it sees
+and sends nothing.
+
+```
+# mscphub /INTERFACE=eth1 /NODE=MHUB /SYSTEMID=65200 /GROUP=4242 /AUTHORIZE=5A3C9E1700000000 -
+  /ALLOCLASS=42 /UNIT0=DKA100,/srv/mscphub/dka100.img
+```
+
+Starts the server by hand with one disk; the nodes see it as `$42$DKA100`. (The line is broken here
+for print; type it as one.)
+
+```
+# mscphub "/HELP=Messages IDCLASH"
+```
+
+Displays the description of the message IDCLASH.
+
+---
+
+# Chapter 6
+# Messages
+
+## 6.1 Message Format
+
+The server reports every condition in the OpenVMS form:
+
+```
+21-10-2026 14:04:20.462 3127338 [MSCPHUB\main:503] %MSCPHUB-I-STARTUP, MSCPHUB X01-16, node MHUB, ...
+```
+
+The fields are the date and time, the process ID, the module and routine that found the condition,
+then the facility name `MSCPHUB`, the severity, the identification and the text of the message.
+
+The severity letters are:
+
+| Letter | Severity | Meaning |
+|---|---|---|
+| `S` | Success | The operation completed |
+| `I` | Information | Something worth knowing; nothing to do |
+| `W` | Warning | Something is not as it should be; the server goes on |
+| `E` | Error | An operation failed; the server goes on |
+| `F` | Fatal | The server stops |
+
+## 6.2 Message Reference
+
+The messages are listed in alphabetical order. A word in *italics* stands for a value the server
+puts in; "(s)" stands for a plural ending.
+
+**ACKSTATS**, information
+
+    acknowledgements (/ACK=*mode*): *n* asked for at once; *n* with a packet of ours, *n* alone: *n*
+    asked, *n* for a duplicate, *n* for *n* packets, *n* when drained, *n* on the tick
+
+    *Explanation:* Written on SIGUSR1 after TRSTATS. How many packets of the nodes asked to be
+    acknowledged at once, how many acknowledgements went in a packet of the server, and how many went
+    alone - because the node asked, for a packet that came twice, for a batch of packets (/ACK=HOLD),
+    when all frames were taken (/ACK=FLUSH), or on the 20 ms tick. Fewer alone is better.
+
+    *User Action:* None.
+
+**ANNOUNCE**, information
+
+    node *name* *state* on *interface*, *n* other node(s) seen in group *n*
+
+    *Explanation:* The listen time is over and the server now sends HELLO messages. With /PASSIVE it
+    says "listens only" and sends nothing.
+
+    *User Action:* None. If no other node is seen, see Section 7.2.
+
+**AUTHFAIL**, warning
+
+    node *name* (*systemid*, *adapter*) sent a CC message with a wrong cluster password, ignored
+
+    *Explanation:* The node is in the group of the server, but its password hash is not that of
+    /AUTHORIZE. No channel is opened to the node. The message is written once for each node.
+
+    *User Action:* Give /AUTHORIZE the hash of the cluster of this node (Section 3.1), and check
+    /GROUP.
+
+**BKSTATS**, information
+
+    unit *name*: sector *n*, *n* read-modify-write(s) needing *n* sector(s), *n* from the cache (in the
+    last 2/16/128/512 written: *n*/*n*/*n*/*n*), *n* wait(s) for a range, *n* group fdatasync(s) for *n*
+    write(s), *n* ZERO(s) (*n* as zeros written)
+
+    *Explanation:* Written on SIGUSR1 for each disk, after its UNITSTATS: the sector of the disk; how
+    many writes were done as read-modify-write (a disk of 4096-octet sectors) and how many sectors
+    they needed first; how many of those came from the cache of the 128 sectors last written; how
+    many were among the last 2, 16, 128 and 512 written; how many writes waited for another one on the
+    same sectors; with /SYNC=GROUP, how many flushes covered how many writes; how many ERASE commands
+    came, and how many of them were done by writing zeros.
+
+    *User Action:* None.
+
+**BLKERR**, warning
+
+    *operation* from *name* (*systemid*), XCT_ID *id*: *reason*, dropped
+
+    *Explanation:* A chunk of data came from a node for no command of the server: the command is over,
+    or the node sent the chunk twice. The server drops it. It does no harm to either side.
+
+    *User Action:* None if it is rare. If it is frequent, report it with a log of /TRACE.
+
+**BLKSTATS**, information
+
+    block transfers: *n* chunk(s) sent (*n* octets), *n* RET_CNF, *n* REQ_DAT, *n* chunk(s) taken (*n*
+    octets), *n* dropped
+
+    *Explanation:* Written on SIGUSR1 after ACKSTATS: the chunks of data sent to the nodes (READ) and
+    their octets, the confirmations the nodes sent for them, the requests for data the server sent
+    (WRITE), the chunks taken in and their octets, the chunks dropped.
+
+    *User Action:* None.
+
+**CHCLOSE**, warning
+
+    channel to node *name* (*systemid*) is closed: *reason*
+
+    *Explanation:* The channel to a node is closed. The reason is one of:
+
+        BYE received, the node is going down     the node shuts down or crashes
+        restarted by the node                    the node started a new channel
+        no answer to the handshake in 5 seconds
+        nothing heard from the node for 8 seconds
+        the node has changed its name or system ID
+        the server is stopping
+
+    A node that is still up opens the channel again in a few seconds.
+
+    *User Action:* None if the channel opens again. If it does not, or if it closes again and again,
+    see Section 7.3.
+
+**CHOPEN**, information
+
+    channel to node *name* (*systemid*) is open, CC V1.*n*, pipe quota *n*, buffer *n*, services *xxxx*/*xxxx*
+
+    *Explanation:* The handshake with the node is over. The message shows the version of the node,
+    its pipe quota, its buffer size and its services (offered/required).
+
+    *User Action:* None.
+
+**CONCLOSE**, information
+
+    connection *name* of *node* (*systemid*) is closed: *reason*
+
+    *Explanation:* A connection to the disk server is closed: the node disconnected, its circuit
+    closed, or the server ended it.
+
+    *User Action:* None; the node connects again. If the reason is "an end message was held back", see
+    MSCPERR.
+
+**CONOPEN**, information
+
+    connection *name* of *node* (*systemid*) to *server* is open, credit *n*/*n*
+
+    *Explanation:* An OpenVMS node has connected to the disk server MSCP$DISK: its disk class driver,
+    VMS$DISK_CL_DRVR. The message shows the credits of both sides. The disks of the server now appear
+    on the node.
+
+    *User Action:* None.
+
+**DEVBUSY**, fatal
+
+    the device *device* is in use: mounted on this host, or another server has it
+
+    *Explanation:* The server cannot open a block device of /UNIT*n* for itself: it is mounted on the
+    Linux computer, it is in use by LVM or RAID, or another server has it. The server stops.
+
+    *User Action:* Dismount the device, or give another one. Never serve a device the Linux computer
+    uses.
+
+**IDCLASH**, fatal
+
+    node *name* (*adapter*) uses the system ID low word *n* of this server
+
+    *Explanation:* Another node uses the same low 16 bits of the SCSSYSTEMID as the server. Two such
+    nodes cannot be told apart on the LAN. The server stops and sends nothing.
+
+    *User Action:* Give the server another /SYSTEMID. On OpenVMS, `SHOW CLUSTER` or
+    `MCR SYSGEN SHOW SCSSYSTEMID` shows the IDs in use.
+
+**IOERR**, error
+
+    *operation* of unit *name*, LBN *n*, *n* octets, failed: errno=*n* (*text*)
+
+    *Explanation:* The Linux file or device of a disk could not be read or written. The message shows
+    the command, the disk, the block, the size and the error of Linux. The OpenVMS node gets a drive
+    error.
+
+    *User Action:* Check the file system and the disk of the Linux computer. "No space left on device"
+    means that the file is sparse and its file system is full.
+
+**IOSTUCK**, warning
+
+    *operation* of unit *name*, LBN *n*, is in the backend for *n* seconds: cancelled
+
+    *Explanation:* A command has been in the Linux disk for 15 seconds. The server cancels it; when
+    the cancel takes, the node gets a drive error. When it does not - Linux is still writing - the disk
+    waits for it.
+
+    *User Action:* Check the Linux disk under the unit: a dead disk, a lost iSCSI or NFS server. Look
+    at `dmesg`.
+
+**IVPARAM**, fatal
+
+    illegal value *value* of /*name*: *what is expected*
+
+    *Explanation:* A qualifier has a wrong value. The message says what is expected. The server stops.
+
+    *User Action:* Correct the value.
+
+**LATSTATS**, information
+
+    unit *name*, *operation*: *n* command(s), average *n* us (backend *n*, transfers *n*, the rest *n*),
+    longest *n* us; under 0.1/0.3/1/3/10 ms and longer: *n*/*n*/*n*/*n*/*n*/*n*
+
+    *Explanation:* Written on SIGUSR1 for each disk and for each of READ and WRITE, after its BKSTATS,
+    when the disk has had such commands. The average time from a command to its answer, in
+    microseconds, and how it was spent: the Linux disk (backend), the data on the LAN (transfers), and
+    the rest - waiting for the disk, the server itself. Then the longest time, and how many commands
+    took under 0.1, 0.3, 1, 3 and 10 ms and longer.
+
+    *User Action:* None.
+
+**LISTEN**, information
+
+    listening *n* second(s) before announcing the node
+
+    *Explanation:* The server listens for /LISTEN seconds before it sends anything.
+
+    *User Action:* None.
+
+**MANYNODES**, warning
+
+    more than *n* nodes on the LAN, node *name* is not remembered
+
+    *Explanation:* There are more nodes on the LAN than the server remembers (64). A node beyond that is
+    not checked for a clash.
+
+    *User Action:* Report it.
+
+**MISALIGN**, warning
+
+    *device* starts *n* octets into a physical sector of *n*: every write is a read-modify-write of the disk
+
+    *Explanation:* A block device of /UNIT*n* - most often a partition - does not start on a physical
+    sector of the Linux disk. No write of a node then fills whole sectors, and every one is a
+    read-modify-write. The server still serves the device.
+
+    *User Action:* For a new disk, make the partition start on a multiple of 1 MB (`parted` and `fdisk`
+    do so by default) and copy the data over.
+
+**MSCPERR**, error
+
+    end message of *operation* to *connection* of *node* (*systemid*) held back: *reason*
+
+    *Explanation:* The server was about to send an answer that would crash the OpenVMS node. It did not
+    send it, and ended the connection. This is an error of the server.
+
+    *User Action:* Report it, with a log of /TRACE.
+
+**MSCPSTATS**, information
+
+    MSCP server: *n* command(s) in progress, *n* octets of data buffers in use
+
+    *Explanation:* Written on SIGUSR1 after BLKSTATS. When no node uses the disks, both numbers are 0.
+
+    *User Action:* None. A number that stays above 0 with no node connected is a fault of the server:
+    report it with the log.
+
+**NAMECLASH**, fatal
+
+    node *name* (*adapter*, system ID *n*) uses the SCSNODE of this server
+
+    *Explanation:* Another node has the same SCSNODE as the server. The server stops and sends nothing.
+
+    *User Action:* Give the server another /NODE.
+
+**NEWNODE**, information
+
+    node *name*, system ID *n*, adapter *adapter*, CC V1.*n* (*n* octets)
+
+    *Explanation:* The server sees a node for the first time: its name, its system ID, its adapter and
+    its version.
+
+    *User Action:* None.
+
+**NODESTATS**, information
+
+    node *name* (*systemid*): channel *state*, open *n* time(s); virtual circuit *state*, open *n*
+    time(s); *n* connection(s) open
+
+    *Explanation:* Written on SIGUSR1 for each node the server knows, after UPTIME. OPEN twice and one
+    connection is a node that uses the disks. A count of opens that grows means that the node comes
+    and goes.
+
+    *User Action:* None. If the counts grow, see CHCLOSE and VCCLOSE in the log.
+
+**NODIRECT**, information
+
+    *path*: no direct I/O (*reason*), served through the page cache
+
+    *Explanation:* The file system of a file of /UNIT*n* does not allow direct I/O, or the size of the
+    file is not whole blocks of 512 octets. The server serves the file through the page cache: it
+    works, but every write costs more.
+
+    *User Action:* None; for speed, put the image on ext4 or XFS, or serve a partition or an LVM volume.
+
+**NOPARAM**, fatal
+
+    the parameter /*name* is mandatory
+
+    *Explanation:* A required qualifier is missing. The server stops.
+
+    *User Action:* Add it.
+
+**NOTOPIC**, error
+
+    sorry, no documentation on *topic*
+
+    *Explanation:* /HELP names a topic the help library does not have.
+
+    *User Action:* Give `mscphub /HELP` to see the topics.
+
+**SHUTDOWN**, information
+
+    signal *n* received, the server is stopping
+
+    *Explanation:* The server got SIGINT or SIGTERM. It sends HOSTSHUT on every open virtual circuit
+    and, if it has announced itself, BYE to the group: the OpenVMS nodes close their circuits and
+    channels to it at once.
+
+    *User Action:* None.
+
+**STARTUP**, information
+
+    MSCPHUB *ident*, node *name*, system ID *n*, group *n*, on *interface* (*address*)
+
+    *Explanation:* The server has started.
+
+    *User Action:* None.
+
+**STATS**, information
+
+    rx *n* frame(s) (*n* CC, *n* TR, *n* dropped, *n* own, *n* bad password), tx *n* frame(s), *n* error(s)
+
+    *Explanation:* Written on SIGUSR1 after the NODESTATS: frames received and sent, and send errors.
+    Dropped frames are frames of other groups or for other nodes; that is normal.
+
+    *User Action:* None.
+
+**SYSERR**, fatal
+
+    *call* failed, errno=*n* (*text*)
+
+    *Explanation:* A Linux system call failed. The server stops. The most frequent ones:
+
+        socket(AF_PACKET), errno=1      the server is not run as root (CAP_NET_RAW)
+        ioctl(SIOCGIFINDEX), errno=19   there is no such interface
+
+    *User Action:* Correct what the call and errno name.
+
+**TRSTATS**, information
+
+    transport: *n* packet(s) sent, *n* retransmitted, *n* received, *n* duplicate(s), *n* out of order,
+    *n* of an old channel; window up to *n*
+
+    *Explanation:* Written on SIGUSR1 after STATS: packets sent, retransmitted, received, duplicates,
+    out of order, packets of an old channel, and the widest the send window has been.
+
+    *User Action:* None. A few retransmissions are normal; many "out of order" mean that frames from
+    the nodes are lost (Section 7.5).
+
+**UNITCFG**, information
+
+    unit *name* is *path*, *n* block(s)*attributes*, SLUN *xxxx*
+
+    *Explanation:* At start-up, for every disk: its name on the OpenVMS nodes, its file or device, its
+    size, its kind, sector and medium, and its MSCP unit number.
+
+    *User Action:* None.
+
+**UNITSTATS**, information
+
+    unit *name*: ONLINE to *n* host(s), *n* command(s) running, *n* waiting, *n* read(s) (*n* octets), *n*
+    write(s) (*n* octets)
+
+    *Explanation:* Written on SIGUSR1 for each disk, after MSCPSTATS: to how many nodes the disk is
+    online (mounted, or being mounted), how many commands run on it and how many wait for their turn,
+    how many reads and writes it has done.
+
+    *User Action:* None.
+
+**UNSAFE**, warning
+
+    /SYNC=NONE: a WRITE is answered before its data is on disk - for tests only
+
+    *Explanation:* /UNSAFE or /SYNC=NONE is given.
+
+    *User Action:* Do not use it with data you need.
+
+**UPTIME**, information
+
+    MSCPHUB *ident*, node *name*, up *n* day(s) *hh*:*mm*:*ss*, OpenVMS time of *zone*
+
+    *Explanation:* The first message on SIGUSR1: the version, the name of the server, how long it has
+    run and the zone of /TIMEZONE.
+
+    *User Action:* None.
+
+**VCCLOSE**, warning
+
+    virtual circuit to node *name* (*systemid*) is closed: *reason*
+
+    *Explanation:* The virtual circuit to a node is closed. The reason is one of:
+
+        the channel is closed ...                        see CHCLOSE
+        restarted by the node (START on the open path)   the node rebooted
+        HOSTSHUT received, the node is shutting down
+        no acknowledgement after 30 retransmissions      frames are lost
+        a block transfer the server does not take
+        the server is stopping
+
+    After a failure the server restarts the channel at once, and the node opens the circuit again in a
+    few seconds.
+
+    *User Action:* None if the circuit opens again. If it closes again and again, see Section 7.5.
+
+**VCOPEN**, information
+
+    virtual circuit to node *name* (*systemid*) is open: *software* *version* on *hardware*, datagram
+    *n*, message *n*
+
+    *Explanation:* The node has answered the server, and `SHOW CLUSTER` on it now shows the server. The
+    message shows what the node told of itself: its software, version and hardware, its largest
+    datagram and message.
+
+    *User Action:* None.
+
+---
+
+# Chapter 7
+# Troubleshooting
+
+Read the last messages of the log first:
+
+```
+# journalctl -u mscphub -n 50
+```
+
+`mscphub "/HELP=Messages `*NAME*`"` says what a message means and what to do; so does Chapter 6.
+
+## 7.1 The Server Stops at Once
+
+The last message is of severity F and says why:
+
+| Message | What to do |
+|---|---|
+| `F-NOPARAM`, `F-IVPARAM` | Correct the qualifier it names in the parameter file |
+| `F-SYSERR, socket(AF_PACKET), errno=1` | Run the server as root |
+| `F-SYSERR, ioctl(SIOCGIFINDEX), errno=19` | Correct the name of /INTERFACE |
+| `F-IDCLASH`, `F-NAMECLASH` | Give another /SYSTEMID or /NODE |
+| `F-DEVBUSY` | The device is mounted or used on Linux |
+
+A qualifier misspelled in the file gives `Skip unrecognized option`: it is not used, and the server
+runs without it.
+
+## 7.2 No Node Is Seen
+
+`ANNOUNCE` says 0 other nodes, and no `NEWNODE` comes.
+
+1. Check /GROUP.
+2. Check that the interface is up and in the right bridge or VLAN.
+3. On OpenVMS, check that PEDRIVER runs: `MCR SCACP SHOW CHANNEL`.
+4. Look at the wire:
+
+```
+# tcpdump -i eth1 ether proto 0x6007
+```
+
+## 7.3 No Channel Opens, or It Opens and Closes Again
+
+The nodes are seen, but no `CHOPEN` comes:
+
+* Look for `AUTHFAIL`: the hash of /AUTHORIZE is not that of the group.
+* Check that /PASSIVE is not given.
+* On OpenVMS, `MCR SCACP SHOW CHANNEL` shows the channel to the server and its state.
+
+`CHOPEN` and `CHCLOSE` again and again: read the reason in `CHCLOSE`. "nothing heard from the node"
+means that frames are lost between the node and the server: check the switch, the bridge or the
+VLAN.
+
+## 7.4 The Disks Do Not Appear on the Node
+
+The channel and the circuit are open, but there is no `CONOPEN`.
+
+* Check that the parameter file has /UNIT*n* lines (`UNITCFG` at start-up).
+* On OpenVMS, check that the process CONFIGURE runs (`SHOW SYSTEM`): it loads the disk class driver.
+
+If the channel is open but no `VCOPEN` comes, run the server with /TRACE for a short time and look
+for `PPD START` in the log, and for a warning after it.
+
+## 7.5 The Circuit Closes, or Writes Are Slow
+
+Read the reason in `VCCLOSE`. Send `SIGUSR1` and look at `TRSTATS`:
+
+* many retransmissions mean that frames to the nodes are lost;
+* many "out of order" mean that frames from the nodes are lost.
+
+Writes slow and reads fast is the second case: a node sends a lost frame again only after a second or
+more. Check the switch, the bridge, the VLAN, the cables.
+
+## 7.6 A Command Fails on the Node
+
+`MOUNT` or `COPY` fails with an I/O error. Look for:
+
+| Message | What it means |
+|---|---|
+| `E-IOERR` | The Linux file or disk failed: full, read only, broken |
+| `W-IOSTUCK` | The Linux disk hangs: look at `dmesg` |
+| `E-MSCPERR` | An error of the server: report it |
+| `W-BLKERR` | A stray chunk of data; harmless if rare |
+
+## 7.7 The Disks Are Slow
+
+| Message or sign | What to do |
+|---|---|
+| `I-NODIRECT` | Move the image to ext4 or XFS |
+| `W-MISALIGN` | Make a new partition on 1 MB |
+| A sparse image | Write it full once (Section 3.2.1) |
+| Many read-modify-writes in `BKSTATS` | INITIALIZE the 4K disk with /CLUSTER=16 (Section 4.3) |
+
+`LATSTATS` shows where the time of a command goes: in the Linux disk (backend) or on the LAN
+(transfers).
+
+## 7.8 Collecting Information for a Report
+
+```
+# systemctl kill -s USR1 mscphub
+# journalctl -u mscphub --since '1 hour ago' > mscphub.txt
+```
+
+Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run the server with
+/TRACE for the minute in which the problem happens, and add that log too.
+
+---
+
+# Appendix A
+# Files
+
+| File | Purpose |
+|---|---|
+| `/opt/mscphub/sbin/mscphub` | The server |
+| `/etc/opt/mscphub/mscphub.conf` | The parameter file of the service; yours, never overwritten |
+| `/etc/opt/mscphub/mscphub.conf.example` | A sample parameter file |
+| `/lib/systemd/system/mscphub.service` | The systemd unit |
+| `/opt/mscphub/share/man/man8/mscphub.8` | The manual page |
+| `/opt/mscphub/share/help/mscphub.hlb` | The help library, English |
+| `/opt/mscphub/share/help/ru/mscphub_ru.hlb` | The help library, Russian |
+| `/opt/mscphub/share/doc/mscphub/` | The manuals |
+
+## Environment Variables
+
+| Variable | Meaning |
+|---|---|
+| `MSCPHUB_HELPLIB` | The help library /HELP reads, in place of the installed one |
+
+---
+
+# Appendix B
+# Limits
+
+| Item | Limit |
+|---|---|
+| Disks per server | 8 (`/UNIT0` to `/UNIT7`) |
+| Name of a disk | `DK`*c**n*: a letter A to Z, a number 0 to 9999 |
+| Size of a disk | The size of the file or the device, in blocks of 512 octets |
+| Sector of a Linux device | 512, 1024, 2048 or 4096 octets |
+| Nodes on the LAN remembered | 64 |
+| Commands in progress per node | /CREDITS, 2 to 64; 16 by default |
+| Data buffers of all commands | 16 MB; a command that finds none waits |
+| Packets unacknowledged per circuit | 16 |
+| Time a disk command may take | 15 seconds, then IOSTUCK |
+| Retransmissions before a circuit fails | 30 |
+| LAN adapters | 1 |

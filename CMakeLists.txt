@@ -14,6 +14,8 @@
 #	MODIFICATION HISTORY:
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
+#		22-OCT-2026	RRL	X01-16 : the manuals of the DEC layout (User's Guide,
+#						Programmer's Guide), MH_PDF renders them.
 #
 #---
 
@@ -222,11 +224,53 @@ endif()
 install(FILES
 	${CMAKE_CURRENT_SOURCE_DIR}/LICENSE
 	${CMAKE_CURRENT_SOURCE_DIR}/README.md
-	${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphub_guide.md
-	${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphub_guide_ru.md
 	${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphublib.md
 	${CMAKE_CURRENT_SOURCE_DIR}/doc/mscphublib_ru.md
 	DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+#
+#	The manuals.  The markdown is the source and is always installed; the
+#	PDF beside it is installed when it is there.  It is rendered on request
+#	(MH_PDF): that costs pandoc and a TeX installation, which a host that
+#	only runs the server does not need.  The rendered manuals are kept in
+#	the repository with their sources, so the kit carries them and the
+#	reader needs no TeX to read them.
+#
+set(MH_MANUALS	mscphub_users_guide		mscphub_users_guide_ru
+		mscphub_programmers_guide	mscphub_programmers_guide_ru)
+
+option(MH_PDF "Render the manuals as PDF from the markdown" OFF)
+
+if ( MH_PDF )
+	find_package(Python3 COMPONENTS Interpreter REQUIRED)
+	find_program(MH_PANDOC	pandoc	REQUIRED)
+	find_program(MH_XELATEX	xelatex	REQUIRED)
+endif()
+
+set(MH_PDFS)
+
+foreach ( MH_MAN ${MH_MANUALS} )
+	install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+	if ( MH_PDF )
+		add_custom_command(
+			OUTPUT	${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.pdf
+			COMMAND	${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc/mkpdf.py
+				${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.md:${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.pdf
+			DEPENDS	${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.md ${CMAKE_CURRENT_SOURCE_DIR}/doc/mkpdf.py
+			COMMENT	"Rendering doc/${MH_MAN}.pdf")
+
+		list(APPEND MH_PDFS ${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.pdf)
+	endif()
+
+	if ( MH_PDF OR EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.pdf )
+		install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/doc/${MH_MAN}.pdf DESTINATION ${CMAKE_INSTALL_DOCDIR})
+	endif()
+endforeach()
+
+if ( MH_PDF )
+	add_custom_target(doc_pdf ALL DEPENDS ${MH_PDFS})
+endif()
 
 #
 #	'uninstall' - it removes what the install step of this build directory

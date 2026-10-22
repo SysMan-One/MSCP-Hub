@@ -1,6 +1,6 @@
 !++
 !  MODULE:		etc/mscphub.conf.example
-!  IDENT:		X01-11
+!  IDENT:		X01-16
 !
 !  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
 !
@@ -15,6 +15,10 @@
 !  AUTHOR:		StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 !
 !  CREATION DATE:	18-OCT-2026
+!
+!  MODIFICATION HISTORY:
+!
+!		22-OCT-2026	RRL	X01-16 : /HELP=/AUTHORIZE, the topic as it is named.
 !--
 !
 ! The LAN interface the OpenVMS nodes are on.  The same LAN segment - a
@@ -30,7 +34,7 @@
 !
 ! The cluster: its group number and its password, as CLUSTER_CONFIG
 ! made them.  The password is the hash of CLUSTER_AUTHORIZE.DAT, see
-! "mscphub /HELP AUTHORIZE" for how to read it on an OpenVMS node.
+! "mscphub /HELP=/AUTHORIZE" for how to read it on an OpenVMS node.
 !
 /GROUP=4242
 /AUTHORIZE=0000000000000000

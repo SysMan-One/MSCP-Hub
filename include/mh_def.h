@@ -20,7 +20,7 @@
 **
 **		    MHLAN  - the AF_PACKET socket: frames in and out
 **		    MHMSCP - the MSCP server: the commands, the units, the hosts
-**		    MHBK   - the backend: the I/O of the units, in threads
+**		    MHBK   - the backend: the I/O of the units, by io_uring
 **		    MHSCS  - SCS: the connections, credits, SCS$DIRECTORY
 **		    MHBLK  - PPC block transfers: SNT_DAT, REQ_DAT, RET_DAT
 **		    MHPPD  - PPD: the START/STACK/ACK handshake, HOSTSHUT
@@ -57,6 +57,7 @@
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
+**		22-OCT-2026	RRL	X01-16 : the backend is io_uring, not threads (the comment).
 **
 **--
 */
@@ -66,11 +67,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-15"
+#define	__IDENT__	"X01-16"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.15.0"
+#define	__REV__		"1.16.0"
 #endif
 
 #ifndef	__FAC__

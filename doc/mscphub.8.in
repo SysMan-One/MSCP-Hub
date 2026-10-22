@@ -16,6 +16,7 @@
 .\"		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 .\"		20-OCT-2026	RRL	X01-12 : 4K disks: the cluster, MISALIGN.
 .\"		21-OCT-2026	RRL	X01-15 : a file O_DIRECT, NODIRECT.
+.\"		22-OCT-2026	RRL	X01-16 : SEE ALSO names the manuals.
 .\"
 .\"---
 .TH MSCPHUB 8 "18 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -236,3 +237,9 @@ StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 .BR systemctl (1),
 .BR journalctl (1),
 .BR tcpdump (8)
+.PP
+.I MSCPHUB User\(aqs Guide
+and
+.I MSCPHUB Programmer\(aqs Guide
+(English and Russian) in
+.IR @MH_FULL_DOCDIR@ .
