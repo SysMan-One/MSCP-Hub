@@ -229,6 +229,16 @@ MSCPHUB собирается из комплекта `MSCPHUB-`*ident*`.tar.gz`:
 | `/opt/mscphub/share/help/mscphub.hlb` | Библиотека помощи (при пакете HELP) |
 | `/opt/mscphub/share/doc/mscphub/` | Руководства и README |
 
+Юниты systemd ставятся только на компьютер, где работает systemd; `-DMH_SYSTEMD=ON` ставит их
+в любом случае. Без systemd — Devuan, Alpine, Slackware, маленькая плата со своим init — запускайте
+сервер из init компьютера, в фоне, с журналом в файл:
+
+```
+/opt/mscphub/sbin/mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /LOGFILE=/var/log/mscphub.log &
+```
+
+Остановить — SIGTERM, счётчики — SIGUSR1, как сказано в главе 4.
+
 ## 2.4 Пути поиска
 
 Сервера и его страницы руководства нет в путях поиска оболочки. Добавьте их, например в

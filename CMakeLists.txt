@@ -18,6 +18,7 @@
 #						Programmer's Guide), MH_PDF renders them.
 #		22-OCT-2026	RRL	X01-17 : MHMON and the collector of T4; Modbus/TCP needs the
 #						threads.
+#		22-OCT-2026	RRL	X01-17 : the units of systemd only where systemd runs.
 #
 #---
 
@@ -200,7 +201,17 @@ install(TARGETS mscphub mhmon RUNTIME DESTINATION ${CMAKE_INSTALL_SBINDIR})
 #	they are made at configuration time.  The configuration itself,
 #	mscphub.conf, is the administrator's: only the sample is installed.
 #
-option(MH_SYSTEMD "Install the systemd unit of the server (installed, never enabled)" ON)
+#
+#	The units of systemd are installed where systemd runs; elsewhere the
+#	server is started by the init of the host (-DMH_SYSTEMD=ON forces them)
+#
+if ( EXISTS /run/systemd/system )
+	set(MH_K_SYSTEMD ON)
+else()
+	set(MH_K_SYSTEMD OFF)
+endif()
+
+option(MH_SYSTEMD "Install the systemd units of the server (installed, never enabled)" ${MH_K_SYSTEMD})
 
 set(MH_SYSTEMDDIR "/lib/systemd/system" CACHE PATH "Where the systemd unit is installed")
 

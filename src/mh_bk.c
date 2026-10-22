@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBK"
-#define	__IDENT__	"X01-15"
-#define	__REV__		"1.15.0"
+#define	__IDENT__	"X01-17"
+#define	__REV__		"1.17.0"
 
 /*
 **++
@@ -65,6 +65,7 @@
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
+**		22-OCT-2026	RRL	X01-17 : <linux/falloc.h>, for the C library musl.
 **
 **--
 */
@@ -81,6 +82,7 @@
 #include	<unistd.h>
 #include	<liburing.h>
 #include	<linux/fs.h>
+#include	<linux/falloc.h>			/* FALLOC_FL_*: musl has them only here		*/
 #include	<sys/eventfd.h>
 #include	<sys/file.h>
 #include	<sys/ioctl.h>

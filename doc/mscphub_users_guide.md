@@ -229,6 +229,16 @@ With the default prefix, `/opt/mscphub`:
 | `/opt/mscphub/share/help/mscphub.hlb` | The help library (with the HELP package) |
 | `/opt/mscphub/share/doc/mscphub/` | The manuals and README |
 
+The systemd units are installed only on a computer where systemd runs; `-DMH_SYSTEMD=ON` installs
+them anyway. Without systemd - Devuan, Alpine, Slackware, a small board with its own init - start
+the server from the init of the computer, in the background, with its log to a file:
+
+```
+/opt/mscphub/sbin/mscphub /CONFIG=/etc/opt/mscphub/mscphub.conf /LOGFILE=/var/log/mscphub.log &
+```
+
+Send it SIGTERM to stop it, SIGUSR1 for its counters, as Chapter 4 says.
+
 ## 2.4 Search Paths
 
 The server and its manual page are not on the search paths of the shell. Add them, for example in
