@@ -27,7 +27,7 @@ and manuals in the manner of OpenVMS.
   Modbus/TCP.
 - Version: X01-17.
 
-Small: no database, no interpreter, no framework - the server is about 240 KB and runs in a few
+Small: no database, no interpreter, no framework - the server is about 300 KB and runs in a few
 megabytes, so the hub of a home VMScluster can be a Raspberry Pi or a NaPi-C board (RK3308,
 https://github.com/napilab/napi-boards), where the kit builds and passes all its tests.
 

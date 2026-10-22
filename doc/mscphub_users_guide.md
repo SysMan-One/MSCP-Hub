@@ -150,7 +150,7 @@ PEDRIVER are expected to work.
 ## 1.6 Small Computers
 
 MSCPHUB needs little: the C library, liburing, the StarLet package and a kernel of the last five
-years - no database, no interpreter, no framework. The server is about 240 KB, MHMON about 150 KB,
+years - no database, no interpreter, no framework. The server is 250 to 300 KB, MHMON about 150 KB,
 and a running server takes under 3 MB of memory, and its data buffers as the commands need them, at
 most 16 MB.
 
