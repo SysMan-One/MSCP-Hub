@@ -57,6 +57,8 @@ add_test(NAME stat COMMAND t_stat)
 
 add_test(NAME t4 COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/t4.sh $<TARGET_FILE:t_stat> $<TARGET_FILE:mhmon>)
 
+set_tests_properties(t4 PROPERTIES TIMEOUT 60)
+
 add_test(NAME params COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/params.sh $<TARGET_FILE:mscphub>)
 
 add_test(NAME docs COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/docs.sh ${PROJECT_SOURCE_DIR})

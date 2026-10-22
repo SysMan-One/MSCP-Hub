@@ -19,6 +19,7 @@
 #	MODIFICATION HISTORY:
 #
 #		22-OCT-2026	RRL	X01-17 : Initial revision.
+#		22-OCT-2026	RRL	X01-17 : /ENDING by date -d @seconds, busybox has no +4 sec.
 #
 
 TSTAT=$1
@@ -37,7 +38,10 @@ HOLD=$!
 sleep 1
 NODE=`cat "$OUT/node"`
 
-"$MHMON" DISK /NODE=$NODE /NODISPLAY /RECORD="$OUT/t4.csv" /INTERVAL=1 /ENDING=`date -d '+4 sec' +%H:%M:%S` 2>"$OUT/err"
+#	date -d @seconds: GNU and busybox both know it
+END=`date -d @$(( $(date +%s) + 4 )) +%H:%M:%S`
+
+"$MHMON" DISK /NODE=$NODE /NODISPLAY /RECORD="$OUT/t4.csv" /INTERVAL=1 /ENDING=$END 2>"$OUT/err"
 wait $HOLD
 
 F="$OUT/t4.csv"
