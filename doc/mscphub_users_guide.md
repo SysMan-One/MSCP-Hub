@@ -80,6 +80,14 @@ reader who holds a message wants Chapter 6, and the one who holds a symptom, Cha
 * *MSCPHUB Programmer's Guide*
 * The manual page `mscphub(8)` and the help library of the server (`mscphub /HELP`)
 
+## Acknowledgments
+
+The authors thank Claude, the AI model of Anthropic, which went through the protocols, the code, the
+tests, the measurements and these manuals together with them.
+
+The authors thank their comrades-in-arms of the NaPi Lab community, who paid for the subscription to
+Claude, so that an engineer of almost pensionable age could carry on this research.
+
 ## Trademarks
 
 OpenVMS, VMScluster, Alpha, AlphaServer, Integrity, Digital, DEC, HSC, HSJ and HSD are trademarks of
@@ -90,7 +98,7 @@ Limited. Rockchip is a trademark of Fuzhou Rockchip Electronics Co., Ltd. Raspbe
 of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider Electric, licensed to the Modbus
 Organization, Inc. Debian is a registered trademark of Software in the Public Interest, Inc. DPDK is
 a project of The Linux Foundation. PF_RING is a trademark of ntop. NaPi is the name of the boards of
-the NaPi Lab team. All other names of products and companies are trademarks of their respective
+the NaPi Lab team. Claude is a trademark of Anthropic, PBC. All other names of products and companies are trademarks of their respective
 owners.
 
 MSCPHUB is an independent implementation, made for interoperability. It contains no code of OpenVMS
@@ -1737,7 +1745,39 @@ and waits up to MVTIMEOUT seconds (3 600 by default). So the server can be resta
 lost for minutes under load, and no data is lost. Stop it in the usual way when you can: the
 BYE it sends lets the nodes close the virtual circuit at once, without an entry in the error log.
 
-## C.7 Reading These Numbers
+## C.7 A Shadow Set Across Two Servers
+
+Two servers on two computers can hold the two members of one shadow set (Volume Shadowing for
+OpenVMS: the license VOLSHAD and the system parameter SHADOWING 2 on every node). One member was a
+disk of the server of C.1, the other a disk of the server of C.5; both were image files of 1 GB:
+
+```
+$ INITIALIZE/SHADOW=($42$DKA500:,$43$DKA200:) SHDW
+$ MOUNT/SYSTEM DSA1:/SHADOW=($42$DKA500:,$43$DKA200:) SHDW
+```
+
+Two jobs, one on each node, copied a file of 1.6 MB to DSA1 and compared every copy with its
+original for 50 minutes, 23-OCT-2026. In that time one server or the other was lost:
+
+| Event | What the shadow set did |
+|---|---|
+| The server of C.5 stopped for 3 minutes | DSA1 went into mount verification; 130 seconds later the shadowing driver removed that member (SHADOW_MBR_TMO, 120 seconds by default) and DSA1 went on with one member |
+| That server started, the member mounted again | `MOUNT/SYSTEM DSA1:/SHADOW=$43$DKA200: SHDW`: a full copy of 1 GB through the tunnel, under the load, in 3 minutes |
+| The server of C.1 stopped for 60 seconds | Mount verification for 80 seconds; the member came back without a copy, as it was away for less than SHADOW_MBR_TMO |
+| `kill -9` of the server of C.5; systemd starts it again 5 seconds later | Mount verification for 16 seconds; both members stayed |
+
+| Measure | Value |
+|---|---|
+| Rounds | 5 136 and 5 036, 0 errors; no job failed or stopped |
+| Error count of DSA1 and of both members | 0 |
+| `ANALYZE/DISK_STRUCTURE DSA1:` | No error; only no QUOTA.SYS, as on a new volume |
+| The two image files, DSA1 dismounted | The same SHA-256: the two members are identical, block for block |
+
+A shadow set across two servers rides out the loss of either of them: the nodes go on with the
+member that is left and copy the other one back when its server returns. Keep SHADOW_MBR_TMO longer
+than the time a server takes to restart, and a restart costs no copy at all.
+
+## C.8 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the

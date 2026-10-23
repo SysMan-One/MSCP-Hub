@@ -41,6 +41,14 @@ neither repeats the other.
 | Chapter 8 | The tests and what they guard |
 | Appendix A | Known limitations |
 
+## Acknowledgments
+
+The authors thank Claude, the AI model of Anthropic, which went through the protocols, the code, the
+tests, the measurements and these manuals together with them.
+
+The authors thank their comrades-in-arms of the NaPi Lab community, who paid for the subscription to
+Claude, so that an engineer of almost pensionable age could carry on this research.
+
 ## Trademarks
 
 OpenVMS, VMScluster, Alpha, AlphaServer, Integrity, Digital, DEC, HSC, HSJ and HSD are trademarks of
@@ -51,7 +59,7 @@ Limited. Rockchip is a trademark of Fuzhou Rockchip Electronics Co., Ltd. Raspbe
 of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider Electric, licensed to the Modbus
 Organization, Inc. Debian is a registered trademark of Software in the Public Interest, Inc. DPDK is
 a project of The Linux Foundation. PF_RING is a trademark of ntop. netmap is free software of Luigi Rizzo and the University of Pisa. NaPi is the name of the boards of
-the NaPi Lab team. All other names of products and companies are trademarks of their respective
+the NaPi Lab team. Claude is a trademark of Anthropic, PBC. All other names of products and companies are trademarks of their respective
 owners.
 
 MSCPHUB is an independent implementation, made for interoperability. It contains no code of OpenVMS

@@ -75,6 +75,13 @@ Then run it as a service: see the User's Guide, Chapter 4.
 
 StarLet Squad and Ruslan R. Laishev
 
+## Acknowledgments
+
+The authors thank Claude, the AI model of Anthropic, which went through the protocols, the code, the
+tests, the measurements and the manuals together with them; and their comrades-in-arms of the NaPi
+Lab community, who paid for the subscription to Claude, so that an engineer of almost pensionable age
+could carry on this research.
+
 ## License
 
 Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
@@ -97,5 +104,5 @@ T4 and TLViz are tools of Hewlett Packard Enterprise. Linux is the registered
 trademark of Linus Torvalds in the U.S. and other countries. Raspberry Pi is a
 trademark of Raspberry Pi Ltd. Modbus is a registered trademark of Schneider
 Electric, licensed to the Modbus Organization, Inc. NaPi is the name of the
-boards of the NaPi Lab team. All other names of products and companies are
-trademarks of their respective owners.
+boards of the NaPi Lab team. Claude is a trademark of Anthropic, PBC. All other
+names of products and companies are trademarks of their respective owners.
