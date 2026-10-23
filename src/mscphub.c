@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-19ECO5"
-#define	__REV__		"1.19.5"
+#define	__IDENT__	"X01-19ECO6"
+#define	__REV__		"1.19.6"
 
 /*
 **++
@@ -64,6 +64,7 @@
 **		22-OCT-2026	RRL	X01-19ECO3 : the User's Guide, C.6 - losing the server under load.
 **		22-OCT-2026	RRL	X01-19ECO4 : the manuals name the copyright holder; the AKA left to the sources.
 **		23-OCT-2026	RRL	X01-19ECO5 : the User's Guide, C.7 - a shadow set across two servers; the acknowledgments.
+**		23-OCT-2026	RRL	X01-19ECO6 : the System V scripts wait for the program to start on a busy computer.
 **
 **--
 */

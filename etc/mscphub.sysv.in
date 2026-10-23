@@ -1,8 +1,8 @@
 #!/bin/sh
 #++
 #  MODULE:		etc/mscphub.sysv.in
-#  IDENT:		X01-18
-#  REV:			1.18.0
+#  IDENT:		X01-19ECO6
+#  REV:			1.19.6
 #
 #  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
 #
@@ -36,6 +36,7 @@
 #  MODIFICATION HISTORY:
 #
 #		22-OCT-2026	RRL	X01-18 : Initial revision.
+#		23-OCT-2026	RRL	X01-19ECO6 : start waits up to 10 seconds for the program to take the place of nohup.
 #
 #--
 #
@@ -71,6 +72,27 @@ running ()
 	[ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && [ "`cat /proc/$PID/comm 2>/dev/null`" = "$NAME" ]
 }
 
+#
+#  Wait for the server to take the place of nohup (and taskset): on a busy computer that takes more
+#  than a second, up to 10 are given.  Gone before that - it has failed.  Then one second more, so that
+#  a wrong parameter, which stops it at once, is said here and not only in the log.
+#
+started ()
+{
+	for i in 1 2 3 4 5 6 7 8 9 10
+	do
+		if running
+		then
+			sleep 1
+			running
+			return
+		fi
+		kill -0 "$PID" 2>/dev/null || return 1
+		sleep 1
+	done
+	return 1
+}
+
 start ()
 {
 	if running
@@ -104,11 +126,7 @@ start ()
 	nohup $PIN "$PROGRAM" "/CONFIG=$MSCPHUB_CONFIG" </dev/null >>"$MSCPHUB_LOG" 2>&1 &
 	echo $! >"$MSCPHUB_PIDFILE"
 
-	#
-	#  A wrong parameter stops the server at once: say so here, not only in the log
-	#
-	sleep 1
-	if running
+	if started
 	then
 		echo "PID $PID"
 		return 0

@@ -21,6 +21,7 @@
 #	MODIFICATION HISTORY:
 #
 #		22-OCT-2026	RRL	X01-18 : Initial revision.
+#		23-OCT-2026	RRL	X01-19ECO6 : the node of T_STAT waited for, not a second; the block held 15 seconds.
 #
 
 BIN=$1
@@ -63,10 +64,15 @@ export MHMON_DIR=$OUT/t4 MHMON_LOG=$OUT/t4.log MHMON_PIDFILE=$OUT/t4.pid MHMON_I
 
 sed "s|^PROGRAM=.*|PROGRAM=$MHMON|" "$BIN/sysv/mscphub-t4" >"$OUT/t4init"
 
-"$TSTAT" HOLD 8 > "$OUT/node" &
+"$TSTAT" HOLD 15 > "$OUT/node" &
 HOLD=$!
-sleep 1
+for i in 1 2 3 4 5 6 7 8 9 10
+do
+	[ -s "$OUT/node" ] && break
+	sleep 1
+done
 export MHMON_NODE=`cat "$OUT/node"`
+[ -n "$MHMON_NODE" ] || fail "T_STAT HOLD gave no node in 10 seconds"
 
 sh "$OUT/t4init" start >"$OUT/out" 2>&1 || fail "start of T4: `cat $OUT/out`"
 sleep 3
