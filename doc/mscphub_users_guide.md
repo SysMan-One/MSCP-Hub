@@ -1777,6 +1777,36 @@ A shadow set across two servers rides out the loss of either of them: the nodes 
 member that is left and copy the other one back when its server returns. Keep SHADOW_MBR_TMO longer
 than the time a server takes to restart, and a restart costs no copy at all.
 
+A member that leaves the set comes back with a copy. How much is copied depends on how it left; the
+same two jobs ran during these tests, the member was away for 3 minutes each time:
+
+| How the member left | How it came back | Time |
+|---|---|---|
+| Its server lost; HBMM enabled on DSA1 or not | A full copy of 1 GB | 170 seconds |
+| `DISMOUNT $43$DKA200:/POLICY=MINICOPY`, then its server stopped | `MOUNT/SYSTEM DSA1:/SHADOW=$43$DKA200:/POLICY=MINICOPY=OPTIONAL SHDW`: a minicopy | 69 seconds |
+
+| Measure | Value |
+|---|---|
+| Rounds | 4 527 and 5 126, 0 errors |
+| The two image files, DSA1 dismounted | The same SHA-256 |
+
+So before planned work on a server, take its member out with `DISMOUNT/POLICY=MINICOPY`: the nodes
+keep a bitmap of the blocks written while the member is away, and the MOUNT that brings it back copies
+only those. A member lost without warning comes back with a full copy: on OpenVMS V8.3 the bitmaps of
+Host-Based Minimerge (HBMM) serve the merge after a node fails, not the return of a member.
+
+A short command procedure can bring a member back without an operator. Every minute it looks for a
+member out of the set whose server is back, and mounts it with `/POLICY=MINICOPY=OPTIONAL`, which
+takes a minicopy when there is a bitmap and a full copy when there is not:
+
+```
+$ IF .NOT. F$GETDVI(M, "SHDW_MEMBER") .AND. F$GETDVI(M, "HOST_AVAIL") THEN -
+	MOUNT/SYSTEM/NOASSIST DSA1:/SHADOW='M'/POLICY=MINICOPY=OPTIONAL SHDW
+```
+
+Mounted the same way, with only the members whose server is there, DSA1 does not wait at boot for a
+server that is down: MOUNT otherwise waits about 2 minutes for it before it goes on without it.
+
 ## C.8 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
