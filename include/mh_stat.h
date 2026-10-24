@@ -39,6 +39,7 @@
 **  MODIFICATION HISTORY:
 **
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
+**		25-OCT-2026	RRL	X01-21 : SOLICIT_DLY, START_SENT: new values, the layout is the same.
 **
 **--
 */
@@ -77,14 +78,16 @@ enum	{
 	MH$K_STCH_CCSTART_SENT,
 	MH$K_STCH_CCSTART_REC,
 	MH$K_STCH_OPEN,
-	MH$K_STCH_HELLO_REC
+	MH$K_STCH_HELLO_REC,
+	MH$K_STCH_SOLICIT_DLY			/* A SOLICIT_SRV came in, our VERF is due	*/
 	};
 
 enum	{
 	MH$K_STVC_NONE		= 0,		/* Never started				*/
 	MH$K_STVC_CLOSED,
 	MH$K_STVC_STACK_SENT,
-	MH$K_STVC_OPEN
+	MH$K_STVC_OPEN,
+	MH$K_STVC_START_SENT			/* Ours, to a boot driver			*/
 	};
 
 /*

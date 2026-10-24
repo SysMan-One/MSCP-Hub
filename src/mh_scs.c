@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHSCS"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -32,7 +32,9 @@
 **		response of the last comes.
 **
 **		Credits (§10): an APPL_MSG we send spends one of the credits
-**		the peer gave (CREDIT of every message it sends adds to them);
+**		the peer gave (CREDIT of every message it sends adds to them,
+**		but of CR_RSP and ACCP_RSP: VMS puts 0 in the ACCP_RSP, the boot
+**		driver of a satellite the credit of our ACCP_REQ);
 **		without a credit it waits in the queue of the CDT.  An APPL_MSG
 **		we take frees a buffer of ours: its credit goes back on our
 **		next message to the peer.
@@ -50,6 +52,8 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		25-OCT-2026	RRL	X01-21 : the CREDIT of an ACCP_RSP is not taken: the boot driver of
+**						a satellite sends ours back in it.
 **
 **--
 */
@@ -717,7 +721,7 @@ int		l_status = STS$K_SUCCESS;
 			(l_mtype < $ARRSZ(s_scstype)) ? s_scstype[l_mtype] : "?", a_node->name, a_node->sysid, l_dst);
 		}
 
-	if ( (l_credit > 0) && (l_mtype != NISCA$K_SCS_CR_RSP) )
+	if ( (l_credit > 0) && (l_mtype != NISCA$K_SCS_CR_RSP) && (l_mtype != NISCA$K_SCS_ACCP_RSP) )
 		l_cdt->sendcr += l_credit;
 
 	switch ( l_mtype )

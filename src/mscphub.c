@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-20ECO1"
-#define	__REV__		"1.20.1"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -69,6 +69,7 @@
 **		24-OCT-2026	RRL	X01-19ECO8 : the User's Guide, 4.3 - the server holds no locks, a caution.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames, an MTU up to 9000.
 **		24-OCT-2026	RRL	X01-20ECO1 : the User's Guide, Appendix C.8: jumbo frames measured.
+**		25-OCT-2026	RRL	X01-21 : the system disk of a diskless satellite (SOLICIT_SRV).
 **
 **--
 */
@@ -249,8 +250,8 @@ char	l_val [32];
 */
 static	int	s_mh$stats	(void)
 {
-static	const char	*s_chstate [MH$K_CH_NSTATE] = { "closed", "CCSTART sent", "CCSTART taken", "OPEN", "HELLO taken" };
-static	const char	*s_pbstate [MH$K_PB_NSTATE] = { "closed", "STACK sent", "OPEN" };
+static	const char	*s_chstate [MH$K_CH_NSTATE] = { "closed", "CCSTART sent", "CCSTART taken", "OPEN", "HELLO taken", "SOLICIT taken" };
+static	const char	*s_pbstate [MH$K_PB_NSTATE] = { "closed", "STACK sent", "OPEN", "START sent" };
 char			l_tz [32];
 uint64_t		l_up, l_bare;
 unsigned		l_ncon;

@@ -1071,6 +1071,25 @@ once.
 
 User Action: None.
 
+### SOLICIT
+
+```
+satellite 'name' ('n') asks for its system disk 'disk' - 'outcome'
+```
+
+Severity: information.
+
+Explanation: The loader of a satellite looks for the server of its
+system disk. The outcome is "served" (the disk is one of this server,
+which answers), "not served here" (another server may serve it), or
+"not served: the unit is read only" (a system disk must be writable).
+The message comes once for a boot of a node.
+
+User Action: None when the disk is served. When this server should
+serve it, compare the name with the names in UNITCFG: the allocation
+class and the name of the unit must be the same. Serve a system disk
+writable.
+
 ### STARTUP
 
 ```

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -37,6 +37,7 @@
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **		22-OCT-2026	RRL	X01-17 : the messages of the statistics and of MHMON.
 **		24-OCT-2026	RRL	X01-20 : JUMBO, RCVBUF.
+**		25-OCT-2026	RRL	X01-21 : SOLICIT.
 **
 **--
 */
@@ -104,6 +105,7 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_MODBUS,	"MODBUS, the counters are served over Modbus/TCP on !AZ, port !UL"),
 	$MHREC(MH$_MBUSERR,	"MBUSERR, the counters are not served over Modbus/TCP: !AZ failed, errno=!SL (!AZ)"),
 	$MHREC(MH$_JUMBO,	"JUMBO, !AZ has an MTU of !UL!AZ: a packet of a block transfer carries up to !UL octets of data"),
+	$MHREC(MH$_SOLICIT,	"SOLICIT, satellite !AZ (!UL) asks for its system disk !AF - !AZ"),
 	$MHREC(MH$_RCVBUF,	"RCVBUF, the socket of !AZ holds !UL octets of frames, not !UL: a burst of jumbo frames can be lost; raise net.core.rmem_max to !UL"),
 	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),
 	$MHREC(MH$_UPTIME,	"UPTIME, MSCPHUB !AZ, node !AZ, up !UL day!%S !2ZL:!2ZL:!2ZL, OpenVMS time of !AZ"),

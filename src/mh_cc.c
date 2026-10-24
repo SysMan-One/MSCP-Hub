@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -27,17 +27,33 @@
 **		The check stays on for the lifetime of the server.
 **
 **		The channel to a node follows the state machine of PEDRIVER,
-**		cut to the states a node without the satellite boot service goes
-**		through:
+**		cut to the states the server goes through:
 **
 **		  HELLO    CLOSED -> HELLO_DLY; 0.5 - 2 s later our CCSTART
 **		  CCSTART  any -> CCSTART_REC, our VERF (OPEN: a restart)
 **		  VERF     CCSTART_SENT/REC -> OPEN, our VACK; OPEN - our
 **			   VACK (the size and delay probes of PEDRIVER)
 **		  VACK     CCSTART_REC -> OPEN
+**		  SOLICIT_SRV of a disk we serve
+**			   CLOSED, HELLO_DLY, CCSTART_SENT -> SOLICIT_DLY;
+**			   0 - 0.5 s later our VERF -> CCSTART_REC; there
+**			   again - our VERF again; OPEN - a restart, our VERF
 **		  BYE      -> CLOSED
 **		  5 s      CCSTART_SENT/REC -> CLOSED
 **		  8 s      OPEN, nothing heard from the node -> CLOSED
+**
+**		A SOLICIT_SRV comes from the boot driver of a satellite, to
+**		the group, every 3 s until a server of its system disk
+**		answers by VERF: the boot driver makes a channel of nothing
+**		else.  Such a channel is marked BOOT: when it opens, the server
+**		starts the path itself (MHPPD), and it is kept 30 s without a
+**		word, not 8 - the boot driver can be quiet at SYSBOOT>.  The
+**		boot driver says BYE at the end of each part it loads and
+**		asks again; the runtime PEDRIVER of the satellite comes with
+**		HELLO and CCSTART, and a CCSTART on the channel of the boot
+**		driver restarts it as an ordinary one.  The pause
+**		before the VERF is shorter than the 0 - 2 s of PEDRIVER: the
+**		boot driver takes the first VERF and drops the others.
 **
 **		Every message but HELLO must carry the AUTHORIZE bit and the
 **		password hash of the group; one that does not is counted and
@@ -58,6 +74,7 @@
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA 16.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: BUS_BUFFER_SIZE by an MTU up to 9000, JUMBO.
+**		25-OCT-2026	RRL	X01-21 : SOLICIT_SRV: the channel of the boot driver of a satellite.
 **
 **--
 */
@@ -80,6 +97,7 @@ enum	{
 	MH$K_CE_VACK		= NISCA$K_CC_VACK,
 	MH$K_CE_HS_TMO,				/* The handshake timer				*/
 	MH$K_CE_LISTN_TMO,			/* Nothing heard on an open channel		*/
+	MH$K_CE_SOLICIT,			/* SOLICIT_SRV of a disk we serve		*/
 
 	MH$K_CE_NEVENT				/* End-Of-List				*/
 	};
@@ -97,23 +115,27 @@ enum	{
 	MH$K_CA_OPEN,				/* A72  - UPDATE, OPEN_PATH			*/
 	MH$K_CA_VACK,				/* A84  - UPDATE, SEND_VACK (a probe)		*/
 	MH$K_CA_UPDATE,				/* A85  - UPDATE				*/
-	MH$K_CA_CLOSE				/* A11/A12/A13/A81 - SHUTDOWN_CH		*/
+	MH$K_CA_CLOSE,				/* A11/A12/A13/A81 - SHUTDOWN_CH		*/
+	MH$K_CA_SOLICIT,			/* A21  - RAND_WAIT -> SOLICIT_DLY		*/
+	MH$K_CA_SOL_VERF,			/* A41/A62 - SEND_VERF -> CCSTART_REC, BOOT	*/
+	MH$K_CA_SOL_RESTART			/* A42  - PATH_RESTART + SEND_VERF		*/
 	};
 
 static	const uint8_t	s_cc_table [MH$K_CE_NEVENT] [MH$K_CH_NSTATE] = {
-	/*			CLOSED		CCSTART_SENT		CCSTART_REC		OPEN			HELLO_DLY	*/
-	[MH$K_CE_HELLO]	    = { MH$K_CA_DELAY,	MH$K_CA_CCSTART,	MH$K_CA_NONE,		MH$K_CA_NONE,		MH$K_CA_NONE },
-	[MH$K_CE_BYE]	    = { MH$K_CA_NONE,	MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_CLOSE },
-	[MH$K_CE_CCSTART]   = { MH$K_CA_VERF,	MH$K_CA_VERF,		MH$K_CA_VERF,		MH$K_CA_RESTART,	MH$K_CA_VERF },
-	[MH$K_CE_VERF]	    = { MH$K_CA_NONE,	MH$K_CA_OPEN_VACK,	MH$K_CA_OPEN_VACK,	MH$K_CA_VACK,		MH$K_CA_NONE },
-	[MH$K_CE_VACK]	    = { MH$K_CA_NONE,	MH$K_CA_NONE,		MH$K_CA_OPEN,		MH$K_CA_UPDATE,		MH$K_CA_NONE },
-	[MH$K_CE_HS_TMO]    = { MH$K_CA_NONE,	MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_NONE,		MH$K_CA_CCSTART },
-	[MH$K_CE_LISTN_TMO] = { MH$K_CA_NONE,	MH$K_CA_NONE,		MH$K_CA_NONE,		MH$K_CA_CLOSE,		MH$K_CA_NONE }
+	/*			CLOSED		CCSTART_SENT		CCSTART_REC		OPEN			HELLO_DLY		SOLICIT_DLY	*/
+	[MH$K_CE_HELLO]	    = { MH$K_CA_DELAY,	MH$K_CA_CCSTART,	MH$K_CA_NONE,		MH$K_CA_NONE,		MH$K_CA_NONE,		MH$K_CA_NONE },
+	[MH$K_CE_BYE]	    = { MH$K_CA_NONE,	MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_CLOSE },
+	[MH$K_CE_CCSTART]   = { MH$K_CA_VERF,	MH$K_CA_VERF,		MH$K_CA_VERF,		MH$K_CA_RESTART,	MH$K_CA_VERF,		MH$K_CA_VERF },
+	[MH$K_CE_VERF]	    = { MH$K_CA_NONE,	MH$K_CA_OPEN_VACK,	MH$K_CA_OPEN_VACK,	MH$K_CA_VACK,		MH$K_CA_NONE,		MH$K_CA_NONE },
+	[MH$K_CE_VACK]	    = { MH$K_CA_NONE,	MH$K_CA_NONE,		MH$K_CA_OPEN,		MH$K_CA_UPDATE,		MH$K_CA_NONE,		MH$K_CA_NONE },
+	[MH$K_CE_HS_TMO]    = { MH$K_CA_NONE,	MH$K_CA_CLOSE,		MH$K_CA_CLOSE,		MH$K_CA_NONE,		MH$K_CA_CCSTART,	MH$K_CA_SOL_VERF },
+	[MH$K_CE_LISTN_TMO] = { MH$K_CA_NONE,	MH$K_CA_NONE,		MH$K_CA_NONE,		MH$K_CA_CLOSE,		MH$K_CA_NONE,		MH$K_CA_NONE },
+	[MH$K_CE_SOLICIT]   = { MH$K_CA_SOLICIT, MH$K_CA_SOLICIT,	MH$K_CA_SOL_VERF,	MH$K_CA_SOL_RESTART,	MH$K_CA_SOLICIT,	MH$K_CA_NONE }
 	};
 
 static	const char *	s_cctype [] = { "HELLO", "BYE", "CCSTART", "VERF", "VACK", "DONE", "SOLICIT_SRV" };
-static	const char *	s_event [] = { "HELLO", "BYE", "CCSTART", "VERF", "VACK", "HS_TMO", "LISTN_TMO" };
-static	const char *	s_state [] = { "CLOSED", "CCSTART_SENT", "CCSTART_REC", "OPEN", "HELLO_DLY" };
+static	const char *	s_event [MH$K_CE_NEVENT] = { "HELLO", "BYE", "CCSTART", "VERF", "VACK", "HS_TMO", "LISTN_TMO", "SOLICIT_SRV" };
+static	const char *	s_state [MH$K_CH_NSTATE] = { "CLOSED", "CCSTART_SENT", "CCSTART_REC", "OPEN", "HELLO_DLY", "SOLICIT_DLY" };
 
 /*
 **  Why a channel is closed, by the event that closes it
@@ -122,13 +144,15 @@ static	const char *	s_why [MH$K_CE_NEVENT] = {
 	[MH$K_CE_BYE]		= "BYE received, the node is going down",
 	[MH$K_CE_CCSTART]	= "restarted by the node",
 	[MH$K_CE_HS_TMO]	= "no answer to the handshake in 5 seconds",
-	[MH$K_CE_LISTN_TMO]	= "nothing heard from the node for 8 seconds"
+	[MH$K_CE_LISTN_TMO]	= "nothing heard from the node for 8 seconds",
+	[MH$K_CE_SOLICIT]	= "the boot driver of the node asks for its system disk again"
 	};
 
 static	unsigned	s_seed;			/* RAND_R state: the jitter of HELLO and CCSTART	*/
 
 static	int	s_mh$cc_namelen	(const MH$PORT *a_port);
 static	int	s_mh$ch_close	(MH$PORT *a_port, MH$NODE *a_node, const char *a_why);
+static	int	s_mh$ch_event	(MH$PORT *a_port, MH$NODE *a_node, unsigned a_event, const uint8_t *a_cc, unsigned a_cclen);
 
 
 
@@ -472,6 +496,7 @@ static	int	s_mh$ch_close	(
 
 	a_node->state	= MH$K_CH_CLOSED;
 	a_node->due	= 0;
+	a_node->boot	= 0;
 
 	if ( !++a_node->lcl_chseq )
 		a_node->lcl_chseq = 1;
@@ -544,6 +569,12 @@ static	int	s_mh$ch_open	(
 
 	$MHMSG(MH$_CHOPEN, a_node->name, a_node->sysid, a_node->minor, a_node->pipe_quota, a_node->bufsz, a_node->p_srv, a_node->r_srv);
 
+	/*
+	**  A boot driver waits for the START of its server
+	*/
+	if ( a_node->boot )
+		return	mh$ppd_start_path(a_port, a_node);
+
 	return	STS$K_SUCCESS;
 }
 
@@ -614,6 +645,7 @@ unsigned	l_action;
 		case	MH$K_CA_VERF:
 			s_mh$ch_update(a_node, a_cc, a_cclen);
 
+			a_node->boot	= 0;			/* A CCSTART: PEDRIVER, not a boot driver	*/
 			a_node->state	= MH$K_CH_CCSTART_REC;
 			a_node->due	= a_port->tick + MH$K_HS_TMO;
 			l_status	= s_mh$ch_send(a_port, a_node, NISCA$K_CC_VERF);
@@ -641,6 +673,37 @@ unsigned	l_action;
 
 		case	MH$K_CA_CLOSE:
 			s_mh$ch_close(a_port, a_node, s_why[a_event] ? s_why[a_event] : s_event[a_event]);
+			break;
+
+		case	MH$K_CA_SOLICIT:
+			/*
+			**  Our CCSTART, if any, is forgotten: the boot driver
+			**  takes nothing but a VERF from a new address
+			*/
+			s_mh$ch_update(a_node, a_cc, a_cclen);
+
+			a_node->boot	= 1;
+			a_node->state	= MH$K_CH_SOLICIT_DLY;
+			a_node->due	= a_port->tick + 1 + (uint64_t) (rand_r(&s_seed) % MH$K_SOL_DLY_MAX);
+			break;
+
+		case	MH$K_CA_SOL_RESTART:
+			s_mh$ch_close(a_port, a_node, s_why[a_event]);
+
+			/* FALLTHRU */
+
+		case	MH$K_CA_SOL_VERF:
+			/*
+			**  BUS_BUFFER_SIZE and the rest are of the SOLICIT_SRV;
+			**  its LCL_CHAN_SEQ_NUM is 0, the VACK brings the real one
+			*/
+			if ( a_cc )
+				s_mh$ch_update(a_node, a_cc, a_cclen);
+
+			a_node->boot	= 1;
+			a_node->state	= MH$K_CH_CCSTART_REC;
+			a_node->due	= a_port->tick + MH$K_HS_TMO;
+			l_status	= s_mh$ch_send(a_port, a_node, NISCA$K_CC_VERF);
 			break;
 		}
 
@@ -684,13 +747,16 @@ char	l_name [NISCA$K_SZ_NODENAME + 1];
 		{
 		l_node = &a_port->nodes[i];
 
-		if ( (l_node->state == MH$K_CH_OPEN) && (a_port->tick - l_node->last >= MH$K_LISTEN_TMO) )
+		if ( (l_node->state == MH$K_CH_OPEN) && (a_port->tick - l_node->last >= (l_node->boot ? MH$K_BOOT_LSTN_TMO : MH$K_LISTEN_TMO)) )
 			s_mh$ch_event(a_port, l_node, MH$K_CE_LISTN_TMO, NULL, 0);
 		else if ( l_node->due && (a_port->tick >= l_node->due) )
 			s_mh$ch_event(a_port, l_node, MH$K_CE_HS_TMO, NULL, 0);
 
 		if ( l_node->state == MH$K_CH_OPEN )
+			{
+			mh$ppd_tick(a_port, l_node);
 			mh$tr_tick(a_port, l_node);
+			}
 		}
 
 	if ( a_port->tick < a_port->next_hello )
@@ -939,6 +1005,70 @@ int	l_len = NISCA$K_SZ_NODENAME;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	Take in a SOLICIT_SRV, the boot driver of a satellite looking for the
+**	server of its system disk: SERVICE is the name of the disk as VMS
+**	gives it, _$42$DKA100:.  A disk we serve, writable, drives the
+**	channel; another is not answered at all - another server may have
+**	it (PEDRIVER: CC_DISK_NOT_SERVED).  A node is told of once a boot,
+**	not at every SOLICIT_SRV: it asks every 3 s, and again for each part
+**	it loads; a SOLICIT_SRV after 60 s of none, or with another outcome,
+**	is told of again.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_node		The node
+**	a_cc		The CC message, its password checked
+**	a_cclen		Its length
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; the condition value of MH$LAN_SEND.
+**--
+*/
+static	int	s_mh$cc_solicit	(
+		MH$PORT *	a_port,
+		MH$NODE *	a_node,
+	const	uint8_t *	a_cc,
+		unsigned	a_cclen
+			)
+{
+const	uint8_t	*l_svc = a_cc + NISCA$K_CC_SERVICE;
+unsigned	l_unit = 0, l_svclen;
+int		l_status, l_served;
+
+	if ( a_cclen < NISCA$K_CC_LEN_V12 )
+		{
+		a_port->rx_drop++;
+		return	STS$K_SUCCESS;
+		}
+
+	l_svclen = $MIN(l_svc[0], NISCA$K_SZ_SERVICE - 1);
+	l_status = mh$mscp_check_service(a_port, l_svc, &l_unit);
+	l_served = (1 & l_status) ? 1 : (l_status == STS$K_WARN) ? -2 : -1;
+
+	if ( (a_node->svclog != l_served) || (a_port->tick - a_node->sollast >= MH$K_SOL_QUIET) )
+		{
+		a_node->svclog = l_served;
+		a_node->sollogs++;
+
+		$MHMSG(MH$_SOLICIT, a_node->name, a_node->sysid, l_svclen, l_svc + 1, (l_served > 0) ? "served"
+			: (l_served == -2) ? "not served: the unit is read only" : "not served here");
+		}
+
+	a_node->sollast = a_port->tick;
+
+	if ( l_served < 0 )
+		return	STS$K_SUCCESS;
+
+	return	s_mh$ch_event(a_port, a_node, MH$K_CE_SOLICIT, a_cc, a_cclen);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	Take in one received frame of the ethertype 60-07: the length word
 **	and the DX header are checked, a frame of another group or addressed
 **	to another node is dropped, as PEDRIVER does (BUS$W_WRONG_PORT);
@@ -1064,6 +1194,9 @@ char		l_macstr [3 * NISCA$K_SZ_MAC];
 
 		return	STS$K_SUCCESS;
 		}
+
+	if ( l_type == NISCA$K_CC_SOLICIT_SRV )
+		return	s_mh$cc_solicit(a_port, l_node, l_cc, l_cclen);
 
 	/*
 	**  A CCSTART, VERF or VACK goes to a node address, never to the group

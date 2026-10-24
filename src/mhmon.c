@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMON"
-#define	__IDENT__	"X01-18"
-#define	__REV__		"1.18.0"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -55,6 +55,7 @@
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
 **		22-OCT-2026	RRL	X01-18 : a recording waits for a server at its start also without
 **						/NODE, as it said it did; NOSERVER once.
+**		25-OCT-2026	RRL	X01-21 : the channel of a SOLICIT_SRV, the path a START of ours opens.
 **
 **--
 */
@@ -164,8 +165,8 @@ static	const char	*s_icol [MH$K_ITEM_N] = { "Op Rate", "KB Rate", "Queue Length"
 static	const char	*s_stitle [MH$K_SRV_N] = { "Frames Received Rate", "Frames Sent Rate", "Kilobytes Received Rate",
 					"Kilobytes Sent Rate", "Retransmission Rate", "Duplicate Packet Rate", "Out of Order Rate",
 					"Data Sent (KB/s)", "Data Taken (KB/s)", "Commands in Progress", "Data Buffers (KB)" };
-static	const char	*s_chst [] = { "closed", "CCSTART", "VERF", "OPEN", "HELLO" };
-static	const char	*s_vcst [] = { "-", "closed", "STACK", "OPEN" };
+static	const char	*s_chst [] = { "closed", "CCSTART", "VERF", "OPEN", "HELLO", "SOLICIT" };
+static	const char	*s_vcst [] = { "-", "closed", "STACK", "OPEN", "START" };
 static	const char	*s_months [12] = { "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC" };
 
 static	volatile sig_atomic_t	s_stop;		/* SIGINT, SIGTERM				*/
@@ -1030,7 +1031,7 @@ unsigned	l_disks;
 			l_disks += !!(s_cur.units[u].online & (1ULL << i));
 
 		$MONLINE("!8<!AZ!>!9UL  !9<!AZ!>!9<!AZ!>!5UL  !11UL  !5UL  !AZ", l_n->name, l_n->sysid,
-			s_chst[l_n->chstate < 5 ? l_n->chstate : 0], s_vcst[l_n->vcstate < 4 ? l_n->vcstate : 0], l_n->chopens,
+			s_chst[l_n->chstate < $ARRSZ(s_chst) ? l_n->chstate : 0], s_vcst[l_n->vcstate < $ARRSZ(s_vcst) ? l_n->vcstate : 0], l_n->chopens,
 			l_n->nconn, l_disks, s_mhmon$num(s_noderate[i], 13, l_rate));
 		}
 }

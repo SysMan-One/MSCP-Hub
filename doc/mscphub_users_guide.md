@@ -3,10 +3,10 @@
 ## User's Guide
 
     Order Number:       MSCPHUB-UG-0119
-    Software Version:   MSCPHUB Version X01-20
+    Software Version:   MSCPHUB Version X01-21
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-18.
-    Date:               22-OCT-2026
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-20.
+    Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
 
@@ -60,7 +60,7 @@ This manual contains the following chapters and appendixes:
 | Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do, the small computers it runs on |
 | Chapter 2 | Installing the server |
 | Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
-| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd |
+| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd, the system disk of a satellite |
 | Chapter 5 | Contains the command dictionary: the `mscphub` and `mhmon` commands and all their qualifiers |
 | Chapter 6 | Describes the format of a message and lists every message with what to do about it |
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
@@ -175,14 +175,17 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 ## 1.5 What MSCPHUB Does Not Do
 
 * It is not a member of the VMScluster and has no votes.
-* It serves disks only: no tapes, and no boot of diskless satellites.
+* It serves disks only, no tapes.
+* It does not load a diskless satellite: an OpenVMS node of the cluster does. It can serve the
+  system disk of the satellite (see 4.12).
 * It cannot yet be a member disk of a shadow set.
 * It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
 * It uses one LAN adapter.
 
-MSCPHUB is verified with OpenVMS Alpha Version 8.3. Other versions that cluster over the LAN with
-PEDRIVER are expected to work.
+MSCPHUB is verified with OpenVMS Alpha Version 8.3, also as the server of the system disk of a
+satellite (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
+work.
 
 ## 1.6 Small Computers
 
@@ -220,8 +223,8 @@ MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-20.tar.gz
-# cd MSCPHUB-X01-20
+# tar xzf MSCPHUB-X01-21.tar.gz
+# cd MSCPHUB-X01-21
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -720,6 +723,99 @@ The collector of T4 takes `mhmon_dir`, `mhmon_interval`, `mhmon_log` and `mhmon_
 Under OpenRC, `supervise-daemon` starts the server again 5 seconds after it fails, as systemd does.
 Under System V init, nothing does: the script says so when the server stops at once, and the log
 says why.
+
+## 4.12 The System Disk of a Satellite
+
+A satellite is a node of the VMScluster without a disk of its own. It loads OpenVMS over the LAN and
+runs from a system disk that another node serves. MSCPHUB can serve that disk. Loading the
+satellite stays with an OpenVMS node of the cluster, its boot server: on an Alpha, the boot server
+sends the loader by MOP.
+
+This is how a satellite boots from a disk of the server:
+
+1. The console of the satellite asks the LAN for its loader. The boot server sends the loader and
+   tells it the name of the system disk, for example `$42$DKA100`, and the root of the satellite, for
+   example `SYS10`.
+2. The loader asks the LAN who serves that disk. The server serves `$42$DKA100` and answers. Its log
+   says `SOLICIT`, then `CHOPEN`, then `VCOPEN` with `VMS BOOT`, then `CONOPEN`. The console of the
+   satellite says "Connected to a MSCP server for the system disk, node MHUB".
+3. The loader reads OpenVMS from the disk in three parts. After each part it says goodbye and asks
+   again: the log shows `VCCLOSE` and `CHCLOSE` with "BYE received", then `CHOPEN`, `VCOPEN` with
+   `VMS BOOT` and `CONOPEN` again, three times in all. `SOLICIT` comes once for a boot. This is
+   normal.
+4. OpenVMS starts from the disk. Its own LAN driver opens the channel again: `CHOPEN`, `VCOPEN` with
+   the version of OpenVMS, and `CONOPEN`.
+5. The satellite joins the cluster.
+
+To prepare a satellite:
+
+1. Serve a writable unit for the system disk, as large as the system disk of the boot server, for
+   example `/UNIT0=DKA100,/srv/mscphub/satsys.img` with `/ALLOCLASS=44`. The satellite asks for it by
+   the name the nodes see, `$44$DKA100`.
+2. On the boot server, copy its system disk to the unit and give the copy a label of its own (here
+   `SATSYS`). `CLUSTER_CONFIG_LAN` does this with CREATE; by hand:
+
+```
+$ MOUNT/FOREIGN $44$DKA100:
+$ BACKUP/IMAGE/IGNORE=INTERLOCK SYS$SYSDEVICE: $44$DKA100:
+$ DISMOUNT $44$DKA100:
+$ MOUNT/OVERRIDE=IDENTIFICATION $44$DKA100:
+$ SET VOLUME/LABEL=SATSYS $44$DKA100:
+$ DISMOUNT $44$DKA100:
+$ MOUNT/SYSTEM $44$DKA100: SATSYS
+```
+
+3. Make the root of the satellite on the copy. `CLUSTER_CONFIG_LAN` does this with MAKE; by hand,
+   create the directories `[SYS10]`, `[SYS10.SYSEXE]`, `[SYS10.SYSMGR]`, `[SYS10.SYSLIB]`,
+   `[SYS10.SYSERR]`, `[SYS10.SYSMAINT]`, `[SYS10.SYSUPD]`, `[SYS10.SYSMSG]`, `[SYS10.SYSHLP]`,
+   `[SYS10.SYSTEST]` and `[SYS10.SYSCBI]`, and enter the common directory in the root:
+
+```
+$ SET FILE/ENTER=$44$DKA100:[SYS10]SYSCOMMON.DIR $44$DKA100:[000000]VMS$COMMON.DIR
+```
+
+4. Write the parameters of the satellite into its root, in one run of SYSGEN. Start from those of
+   the boot server and change what is the satellite's own:
+
+```
+$ MCR SYSGEN
+SYSGEN> USE CURRENT
+SYSGEN> SET SCSNODE "SAT1"
+SYSGEN> SET SCSSYSTEMID 65000
+SYSGEN> SET VOTES 0
+SYSGEN> SET SHADOWING 0
+SYSGEN> SET STARTUP_P1 "MIN"
+SYSGEN> WRITE $44$DKA100:[SYS10.SYSEXE]ALPHAVMSSYS.PAR
+SYSGEN> EXIT
+```
+
+   `STARTUP_P1 "MIN"` keeps the copy from starting the network products of the boot server with its
+   addresses. Take it out when the satellite has a configuration of its own. `SHADOWING 0` is for a
+   satellite that mounts no shadow set; leave the value of the boot server when it must.
+5. On the boot server, let LANCP load the satellite:
+
+```
+$ MCR LANCP SET DEVICE EWA0/MOPDLL=(ENABLE,KNOWNCLIENTSONLY,SIZE=1482)
+$ MCR LANCP SET NODE SAT1/ADDRESS=08-00-2B-E5-43-01/ROOT=$44$DKA100:<SYS10.>/BOOT_TYPE=ALPHA_SATELLITE
+```
+
+   `SET` changes what runs now; `DEFINE`, with the same qualifiers, keeps it over a reboot.
+6. Boot the satellite from its LAN adapter:
+
+```
+>>> boot ewa0
+```
+
+**Caution**
+
+> * A satellite boots only into a cluster that has quorum. The server is not a member of the
+>   cluster and has no votes. Keep an OpenVMS node with votes up, or give the satellite votes of its
+>   own.
+> * All the satellites of one system disk, and all the nodes that mount it, must be members of one
+>   cluster. The server holds no locks (Section 4.3): two clusters on one system disk destroy it.
+> * The system disk must be writable. The server does not serve a read-only unit to a satellite;
+>   `SOLICIT` says so.
+> * A served disk cannot be the quorum disk.
 
 ---
 
@@ -1416,6 +1512,23 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* None.
 
+**SOLICIT**, information
+
+    satellite *name* (*n*) asks for its system disk *disk* - *outcome*
+
+    *Explanation:* The loader of a satellite looks for the server of its system disk (Section 4.12).
+    The *outcome* is one of:
+
+    * "served": the disk is one of this server; the server answers.
+    * "not served here": the disk is not one of this server. Another server may serve it.
+    * "not served: the unit is read only": a system disk must be writable.
+
+    The message comes once for a boot of a node, not every time the loader asks again.
+
+    *User Action:* None when the disk is served. When this server should serve it, compare the name
+    with the names in `UNITCFG`: the allocation class and the name of the unit must be the same.
+    Serve a system disk writable.
+
 **STARTUP**, information
 
     MSCPHUB *ident*, node *name*, system ID *n*, group *n*, on *interface* (*address*)
@@ -1637,7 +1750,22 @@ more. Check the switch, the bridge, the VLAN, the cables.
 | "No MSCPHUB server runs ...; waiting for it" | The server has stopped; MHMON goes on when it comes back |
 | `W-MBUSERR` in the log of the server | The port of /MODBUS is in use, or the address is not of this computer |
 
-## 7.9 Collecting Information for a Report
+## 7.9 A Satellite Does Not Boot
+
+The console of the satellite says "Waiting for access to the system disk server", or nothing more
+happens after the loader.
+
+* No `SOLICIT` in the log: the satellite is not on the LAN of the server, or it is in another group.
+  Look for `AUTHFAIL`: the satellite has another password.
+* `SOLICIT` with "not served here": the name the satellite asks for is not the name of a unit. Compare
+  it with the names in `UNITCFG`: the allocation class (/ALLOCLASS) and the name of the unit must be
+  the same. The boot server takes the name from its database of LANCP.
+* `SOLICIT` with "the unit is read only": serve the system disk writable.
+* `SOLICIT` with "served", but no `VCOPEN`: run the server with /TRACE for a short time and look for
+  `PPD` in the log.
+* The satellite stops when it joins the cluster: the cluster has no quorum (see the caution of 4.12).
+
+## 7.10 Collecting Information for a Report
 
 ```
 # systemctl kill -s USR1 mscphub
@@ -1909,7 +2037,24 @@ were 0 errors and no packet was sent twice.
 > gave it only its default of about 208 KB. The server lost about one frame a minute, and the nodes
 > sent those frames again. The disks worked, but more slowly, and the message `RCVBUF` now says so.
 
-## C.9 Reading These Numbers
+## C.9 A Satellite Booted from the Server
+
+On 25-OCT-2026 a diskless emulated AlphaServer, SAT1, booted OpenVMS Alpha Version 8.3 from a disk
+of MSCPHUB Version X01-21 and joined the cluster of the two nodes of C.1. The server, MHUB3, served
+one unit, `$44$DKA100`, a copy of the system disk of node ALPHA1 made as Section 4.12 tells. ALPHA1
+loaded the satellite by MOP over its DE500.
+
+| Test | What happened |
+|---|---|
+| Boot | `SOLICIT` "served", three parts read by the loader, then the runtime circuit: SAT1 a member 22 s after its `SOLICIT` |
+| The disk | A file of 5519 blocks copied on the system disk of SAT1 and read back: the same checksum, no errors |
+| Boot again | The same as the first time |
+| The server lost | MHUB3 stopped as the MOP load ended and started 45 s later. The console said "Waiting for access to the system disk server"; 3 s after the server came back its loader asked again, and SAT1 became a member 24 s after that |
+
+The loader offers a block of 1424 octets, not 1426, and says `BYE` at the end of each part it
+reads.
+
+## C.10 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the
@@ -1949,7 +2094,7 @@ The map has a version in register 0. A change of the map raises it.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Seconds since the server started |
-| 10 | 4 | Version of the server, text: X01-20 |
+| 10 | 4 | Version of the server, text: X01-21 |
 | 14 | 4 | /NODE, text |
 | 18 | 8 | /INTERFACE, text |
 | 100 | 4 | Frames received |
@@ -2011,8 +2156,8 @@ offset 40.
 |---|---|---|
 | 0 | 4 | SCSNODE, text |
 | 4 | 1 | SCSSYSTEMID, the low 16 bits |
-| 5 | 1 | Channel: 0 closed, 1 CCSTART sent, 2 VERF sent, 3 open, 4 HELLO taken |
-| 6 | 1 | Virtual circuit: 0 never started, 1 closed, 2 STACK sent, 3 open |
+| 5 | 1 | Channel: 0 closed, 1 CCSTART sent, 2 VERF sent, 3 open, 4 HELLO taken, 5 SOLICIT_SRV taken |
+| 6 | 1 | Virtual circuit: 0 never started, 1 closed, 2 STACK sent, 3 open, 4 START sent (to a satellite) |
 | 7 | 1 | SCS connections open |
 | 8 | 1 | ... of them to the disk server |
 | 10 | 2 | Times the channel has opened |
@@ -2027,4 +2172,4 @@ The function 2B/0E answers the basic objects:
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-20 |
+| 2 | MajorMinorRevision | X01-21 |

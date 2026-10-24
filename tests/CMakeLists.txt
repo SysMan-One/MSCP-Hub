@@ -17,6 +17,7 @@
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
 #		22-OCT-2026	RRL	X01-17 : the statistics block, Modbus, MHMON and T4.
 #		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
+#		25-OCT-2026	RRL	X01-21 : the system disk of a satellite, T_BOOT.
 #
 #---
 
@@ -37,6 +38,12 @@ add_executable(t_scs t_scs.c)
 target_link_libraries(t_scs PRIVATE mhcore)
 
 add_test(NAME scs COMMAND t_scs)
+
+add_executable(t_boot t_boot.c)
+
+target_link_libraries(t_boot PRIVATE mhcore)
+
+add_test(NAME boot COMMAND t_boot)
 
 add_executable(t_blk t_blk.c)
 

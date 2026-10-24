@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMSCP"
-#define	__IDENT__	"X01-15"
-#define	__REV__		"1.15.0"
+#define	__IDENT__	"X01-21"
+#define	__REV__		"1.21.0"
 
 /*
 **++
@@ -81,6 +81,7 @@
 **						reads only the edges it does not find there.
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
+**		25-OCT-2026	RRL	X01-21 : MH$MSCP_CHECK_SERVICE: the system disk a satellite asks for.
 **
 **--
 */
@@ -370,6 +371,63 @@ int		l_status, l_ro;
 		$MHMSG(MH$_UNSAFE);
 
 	return	mh$bk_init();
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Is the disk a booting satellite asks for one of ours (as
+**	SCS$MSCP_CHECK_SERVICE of VMS)?  The SERVICE of its SOLICIT_SRV is the
+**	name of the disk as $GETDVI DVI$_ALLDEVNAM gives it: _$42$DKA100:, or
+**	_MHUB$DKA100: with the allocation class 0.  The underscore and the
+**	colon may be there or not, the case does not matter.  A system disk
+**	must be writable: a read-only unit is not served.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_svc		SERVICE: ASCIC, 16 octets at most
+**	a_unit		Output: the index of the unit
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; STS$K_WARN - the unit is read only; STS$K_ERROR - no
+**	such unit.
+**--
+*/
+int	mh$mscp_check_service	(
+	const	MH$PORT *	a_port,
+	const	uint8_t *	a_svc,
+		unsigned *	a_unit
+			)
+{
+const	char	*l_name = (const char *) a_svc + 1;
+unsigned	l_len = $MIN(a_svc[0], NISCA$K_SZ_SERVICE - 1);
+
+	if ( l_len && (l_name[0] == '_') )
+		{
+		l_name++;
+		l_len--;
+		}
+
+	if ( l_len && (l_name[l_len - 1] == ':') )
+		l_len--;
+
+	for ( unsigned i = 0; i < a_port->nunit; i++ )
+		{
+		const	MH$UNIT	*l_unit = &a_port->units[i];
+
+		if ( (strlen(l_unit->dvname) != l_len) || strncasecmp(l_unit->dvname, l_name, l_len) )
+			continue;
+
+		*a_unit = i;
+
+		return	l_unit->ro ? STS$K_WARN : STS$K_SUCCESS;
+		}
+
+	return	STS$K_ERROR;
 }
 
 

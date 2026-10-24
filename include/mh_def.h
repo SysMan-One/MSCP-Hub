@@ -62,6 +62,8 @@
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: the buffers of a frame up to an MTU of 9000,
 **						the packets of a circuit sized by the MTU; JUMBO;
 **						the receive buffer of the socket for them, RCVBUF.
+**		25-OCT-2026	RRL	X01-21 : the system disk of a satellite: SOLICIT_SRV, SOLICIT_DLY,
+**						the START of the server on the path of a boot driver; SOLICIT.
 **
 **--
 */
@@ -71,11 +73,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-20"
+#define	__IDENT__	"X01-21"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.20.0"
+#define	__REV__		"1.21.0"
 #endif
 
 #ifndef	__FAC__
@@ -150,6 +152,7 @@ enum	{
 	MH$K_MSG_MBUSERR,			/* ... cannot be				*/
 	MH$K_MSG_JUMBO,				/* The LAN takes frames longer than 1500	*/
 	MH$K_MSG_RCVBUF,			/* The socket holds fewer jumbo frames than asked	*/
+	MH$K_MSG_SOLICIT,			/* A booting satellite asks for its system disk	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -202,6 +205,7 @@ enum	{
 #define	MH$_MBUSERR		$MHSTS(MH$K_MSG_MBUSERR,	STS$K_WARN)
 #define	MH$_JUMBO		$MHSTS(MH$K_MSG_JUMBO,		STS$K_INFO)
 #define	MH$_RCVBUF		$MHSTS(MH$K_MSG_RCVBUF,		STS$K_WARN)
+#define	MH$_SOLICIT		$MHSTS(MH$K_MSG_SOLICIT,	STS$K_INFO)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -221,6 +225,10 @@ enum	{
 #define	MH$K_HS_TMO		(5 * MH$K_TICKS_SEC)	/* The handshake of a channel must end in this	*/
 #define	MH$K_DLY_MIN		25		/* HELLO of a new node to our CCSTART: 0.5 ... 2 s	*/
 #define	MH$K_DLY_MAX		100
+#define	MH$K_SOL_DLY_MAX	25		/* SOLICIT_SRV to our VERF: 0 ... 0.5 s		*/
+#define	MH$K_SOL_QUIET		(60 * MH$K_TICKS_SEC)	/* A SOLICIT_SRV after this long is a new boot	*/
+#define	MH$K_BOOT_LSTN_TMO	(30 * MH$K_TICKS_SEC)	/* ... of a boot driver: SYSBOOT> can be quiet	*/
+#define	MH$K_PPD_START_TMO	(1 * MH$K_TICKS_SEC)	/* Our START again until the STACK comes	*/
 
 #define	MH$K_LAN_OVHD		72		/* PEDRIVER: data field = DLL size - 72		*/
 #define	MH$K_LAN_ETHMTU		1500		/* An Ethernet without jumbo frames		*/
@@ -316,8 +324,8 @@ typedef struct mh_cfg_t {
 
 /*
 **  States of a channel, the subset of CH$W_STATE of PEDRIVER the server
-**  goes through (the SOLICIT_* states are of the satellite boot service,
-**  not here)
+**  goes through.  The VERF to a SOLICIT_SRV waits for the VACK in
+**  CCSTART_REC, as PEDRIVER's SOLICIT_REC does; the node is marked BOOT.
 */
 enum	{
 	MH$K_CH_CLOSED		= 0,
@@ -325,18 +333,20 @@ enum	{
 	MH$K_CH_CCSTART_REC,			/* Our VERF is out, a VACK is awaited		*/
 	MH$K_CH_OPEN,
 	MH$K_CH_HELLO_DLY,			/* A HELLO came in, our CCSTART is due		*/
+	MH$K_CH_SOLICIT_DLY,			/* A SOLICIT_SRV came in, our VERF is due	*/
 
 	MH$K_CH_NSTATE				/* End-Of-List				*/
 	};
 
 /*
-**  States of the path, PB$W_STATE: the server
-**  answers the START of the VMS node, it never starts a path itself
+**  States of the path, PB$W_STATE: the server answers the START of a VMS
+**  node; to a boot driver, which never sends START, it sends its own
 */
 enum	{
 	MH$K_PB_CLOSED		= 0,
 	MH$K_PB_ST_REC,				/* Our STACK is out, an ACK is awaited		*/
 	MH$K_PB_OPEN,
+	MH$K_PB_ST_SENT,			/* Our START is out, a STACK is awaited		*/
 
 	MH$K_PB_NSTATE				/* End-Of-List				*/
 	};
@@ -656,6 +666,7 @@ typedef struct mh_vc_t {
 	unsigned	window, maxwin;
 	unsigned	rto, retries;
 	uint64_t	due;			/* Tick the head of the transmit cache times out	*/
+	uint64_t	stdue;			/* ST_SENT: tick our START goes again		*/
 	int		sack;			/* ACK owed: 1 - on the next tick, 2 - now	*/
 	int		recover;		/* A timeout: a partial ACK resends the head	*/
 	unsigned	nowed;			/* Packets taken since our last ACK		*/
@@ -718,6 +729,10 @@ typedef struct mh_node_t {
 	uint16_t	p_srv, r_srv;
 	uint32_t	opens;			/* Times the channel came open			*/
 	int		authfail;		/* AUTHFAIL has been reported for this node	*/
+	int		boot;			/* The channel came of a SOLICIT_SRV: a boot driver	*/
+	int		svclog;			/* SOLICIT reported: 1 served, -1 not ours, -2 RO	*/
+	uint64_t	sollast;		/* Tick of its last SOLICIT_SRV			*/
+	uint32_t	sollogs;		/* SOLICIT messages about it			*/
 
 	MH$VC *		vc;			/* NULL - never had a START			*/
 } MH$NODE;
@@ -895,6 +910,8 @@ int	mh$blk_cancel	(MH$PORT *a_port, MH$HRB *a_hrb);
 int	mh$ppd_input	(MH$PORT *a_port, MH$NODE *a_node, unsigned a_opc, const uint8_t *a_ppd, unsigned a_len);
 int	mh$ppd_close	(MH$PORT *a_port, MH$NODE *a_node, const char *a_why);
 int	mh$ppd_shutdown	(MH$PORT *a_port);
+int	mh$ppd_start_path (MH$PORT *a_port, MH$NODE *a_node);
+int	mh$ppd_tick	(MH$PORT *a_port, MH$NODE *a_node);
 
 /*
 **  MHSCS.C
@@ -911,6 +928,7 @@ int	mh$mscp_init	(MH$PORT *a_port, const MH$CFG *a_cfg);
 int	mh$mscp_connect	(MH$PORT *a_port, MH$NODE *a_node, MH$CDT *a_cdt);
 int	mh$mscp_disconnect (MH$PORT *a_port, MH$NODE *a_node, MH$CDT *a_cdt);
 int	mh$mscp_stats	(MH$PORT *a_port);
+int	mh$mscp_check_service (const MH$PORT *a_port, const uint8_t *a_svc, unsigned *a_unit);
 const char *mh$mscp_opname (const MH$HRB *a_hrb);
 int	mh$mscp_input	(MH$PORT *a_port, MH$NODE *a_node, MH$CDT *a_cdt, const uint8_t *a_cmd, unsigned a_len);
 int	mh$mscp_xferdone (MH$PORT *a_port, MH$HRB *a_hrb, int a_ok);

@@ -3,10 +3,10 @@
 ## Programmer's Guide
 
     Order Number:       MSCPHUB-PG-0119
-    Software Version:   MSCPHUB Version X01-20
+    Software Version:   MSCPHUB Version X01-21
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-18.
-    Date:               22-OCT-2026
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-20.
+    Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
 
@@ -282,6 +282,13 @@ learns the nodes; a node that uses its system ID or its name stops it (`IDCLASH`
 the check stays on for the life of the server. A CC message with a wrong password hash is counted
 and does not move the channel (`AUTHFAIL`). With `/PASSIVE` the state machine does not run.
 
+A SOLICIT_SRV is the loader of a satellite asking for the server of its system disk. When the disk
+is one of the units, writable (`mh$mscp_check_service`), the channel goes to SOLICIT_DLY and, 0 to
+0.5 seconds later, the server sends VERF; the loader makes a channel of nothing else. Such a channel
+is marked `boot`: it is kept 30 seconds without a word instead of 8, and when it opens the server
+starts the path itself. The CCSTART of the runtime PEDRIVER of the satellite restarts the channel as
+an ordinary one. `SOLICIT` tells the operator once a boot.
+
 ## 3.4 mh_tr.c
 
 The transport of the virtual circuit: sequence numbers in longwords, a cumulative acknowledgement,
@@ -301,6 +308,12 @@ tail that the move of the window leaves behind.
 
 The path of SCS to a node over its circuit: the server answers the START of the node with STACK,
 takes the system block of the node out of the START, and opens its transport. HOSTSHUT closes it.
+
+The loader of a satellite never sends START: it waits for the START of its server. On a channel
+marked `boot` the server sends START every second until the STACK comes (state ST_SENT), and
+answers the STACK with ACK. START and STACK are built by one routine, `s_mh$ppd_sb`, so they say the
+same about the server: the satellite makes the system block of its disk server from the START, and
+its runtime SCS meets that block again in the STACK.
 
 ## 3.6 mh_scs.c
 
@@ -749,5 +762,6 @@ not in the kit.
 | Window of 16 packets per circuit | `mh_tr.c` |
 | Jumbo frames up to an MTU of 9000 | `MH$K_LAN_MAXMTU`, `mh_def.h` |
 | No member disk of a shadow set (no forced error) | `mh_mscp.c` |
-| No tapes, no boot of satellites | not implemented |
+| No tapes | not implemented |
+| No MOP or BOOTP: an OpenVMS node loads a satellite | not implemented |
 | No cluster over IP | not implemented |

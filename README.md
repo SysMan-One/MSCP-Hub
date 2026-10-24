@@ -27,7 +27,7 @@ and manuals in the manner of OpenVMS.
   and the counters as the MONITOR utility of OpenVMS does; `/RECORD` writes T4 style CSV for
   TLViz, `mscphub-t4.service` records every minute. `/MODBUS=port` serves the counters over
   Modbus/TCP.
-- Version: X01-20.
+- Version: X01-21.
 
 Small: no database, no interpreter, no framework - the server is about 300 KB and runs in a few
 megabytes, so the hub of a home VMScluster can be a Raspberry Pi or a NaPi-C board (RK3308,
