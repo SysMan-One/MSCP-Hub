@@ -1710,8 +1710,8 @@ Linux computer, next to the server, and every change of MSCPHUB is tried on it b
 
 | Item | Configuration |
 |---|---|
-| OpenVMS nodes | Two AlphaServer ES40 under AlphaEmu, 2 CPUs and 1 GB each; OpenVMS Alpha Version 8.3; DE500 LAN adapters |
-| LAN | A Linux bridge on the host |
+| OpenVMS nodes | Two AlphaServer ES40 under AlphaEmu, 2 CPUs and 1 GB each; OpenVMS Alpha Version 8.3; DE500 LAN adapters, and from Section C.8 on also an Intel 82540EM Gigabit adapter |
+| LAN | A Linux bridge on the host; for the 82540EM a second bridge with an MTU of 9000 |
 | Linux computer | Intel Xeon E5-2697 v4; a consumer NVMe SSD with ext4 |
 | MSCPHUB | /SYNC=DSYNC, /ACK=HOLD; the disk is an image file of 200 MB on ext4, written full |
 
@@ -1885,7 +1885,31 @@ $ IF .NOT. F$GETDVI(M, "SHDW_MEMBER") .AND. F$GETDVI(M, "HOST_AVAIL") THEN -
 Mounted the same way, with only the members whose server is there, DSA1 does not wait at boot for a
 server that is down: MOUNT otherwise waits about 2 minutes for it before it goes on without it.
 
-## C.8 Reading These Numbers
+## C.8 Jumbo Frames
+
+The same two nodes got a second LAN adapter, an Intel 82540EM. It is a Gigabit adapter that OpenVMS
+drives with jumbo frames, which the DE500 cannot do. The server and the 82540EMs were put on a bridge
+with an MTU of 9000, and bit 6 of `LAN_FLAGS` was set on the nodes (Section 3.5). The two nodes then
+read and wrote one disk of MSCPHUB at the same time for 20 minutes. MSCPHUB Version X01-20,
+24-OCT-2026:
+
+| LAN adapter of the nodes | Packet of a block transfer | Rounds, node A / node B | READ, average | WRITE, average |
+|---|---|---|---|---|
+| DE500 (an older AlphaEmu) | 1426 octets | 2 611 / 2 797 | 1 242 µs | 2 549 µs |
+| 82540EM | 1426 octets | 3 575 / 3 649 | 769 µs | 1 772 µs |
+| 82540EM, jumbo frames | 8100 octets | 4 036 / 4 026 | 554 µs | 1 240 µs |
+
+The second and the third rows differ only in jumbo frames. With them the nodes did 10 to 13 % more
+work, and a command took about 30 % less time. A READ of 64 KB is then 9 packets, not 46. There
+were 0 errors and no packet was sent twice.
+
+**Note**
+
+> With jumbo frames the server needs a receive buffer of 4 MB (Section 3.5). In a first run the host
+> gave it only its default of about 208 KB. The server lost about one frame a minute, and the nodes
+> sent those frames again. The disks worked, but more slowly, and the message `RCVBUF` now says so.
+
+## C.9 Reading These Numbers
 
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the

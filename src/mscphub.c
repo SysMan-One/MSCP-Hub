@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-20ECO1"
+#define	__REV__		"1.20.1"
 
 /*
 **++
@@ -68,6 +68,7 @@
 **		23-OCT-2026	RRL	X01-19ECO7 : the User's Guide, C.7 - the minicopy, a member brought back without an operator.
 **		24-OCT-2026	RRL	X01-19ECO8 : the User's Guide, 4.3 - the server holds no locks, a caution.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames, an MTU up to 9000.
+**		24-OCT-2026	RRL	X01-20ECO1 : the User's Guide, Appendix C.8: jumbo frames measured.
 **
 **--
 */
