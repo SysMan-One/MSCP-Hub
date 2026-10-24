@@ -177,6 +177,7 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 * It is not a member of the VMScluster and has no votes.
 * It serves disks only: no tapes, and no boot of diskless satellites.
 * It cannot yet be a member disk of a shadow set.
+* It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
 * It uses one LAN adapter.
 
@@ -489,6 +490,21 @@ Two or more nodes can use one disk together:
 ```
 $ MOUNT/CLUSTER $42$DKA100: DATA1
 ```
+
+**Caution**
+
+> The server does not arbitrate between the nodes: it carries out every READ and WRITE it is
+> given, in turn, and holds no locks. What keeps the nodes from overwriting each other is the
+> VMScluster itself - the distributed lock manager, the locks that the file system and RMS take in
+> it - and the quorum, which lets no node write that is not a member. Therefore:
+>
+> * Share a disk only as a Files-11 volume, mounted on each node with `MOUNT/CLUSTER` or
+>   `MOUNT/SYSTEM`. A disk mounted `/FOREIGN` on two nodes is protected by nothing but the
+>   application, which must take locks of its own.
+> * Serve a disk to the nodes of one cluster only. A second cluster of the same group number and
+>   password - a copy of a system disk carries them - connects to the server as well, and the two
+>   clusters do not share a lock manager.
+> * Never write to a served file or device on Linux (see 3.2.4 and 4.7).
 
 ## 4.4 Displaying the State of the Server
 

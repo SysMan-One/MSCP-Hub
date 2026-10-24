@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-19ECO7"
-#define	__REV__		"1.19.7"
+#define	__IDENT__	"X01-19ECO8"
+#define	__REV__		"1.19.8"
 
 /*
 **++
@@ -66,6 +66,7 @@
 **		23-OCT-2026	RRL	X01-19ECO5 : the User's Guide, C.7 - a shadow set across two servers; the acknowledgments.
 **		23-OCT-2026	RRL	X01-19ECO6 : the System V scripts wait for the program to start on a busy computer.
 **		23-OCT-2026	RRL	X01-19ECO7 : the User's Guide, C.7 - the minicopy, a member brought back without an operator.
+**		24-OCT-2026	RRL	X01-19ECO8 : the User's Guide, 4.3 - the server holds no locks, a caution.
 **
 **--
 */
