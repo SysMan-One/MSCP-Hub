@@ -35,7 +35,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
-**		24-OCT-2026	RRL	X01-20 : a frame up to an MTU of 9000.
+**		24-OCT-2026	RRL	X01-20 : a frame up to an MTU of 9000; the receive buffer for them.
 **
 **--
 */
@@ -54,6 +54,7 @@
 #include	"mh_def.h"
 
 static	int	s_mh$lan_fail	(MH$PORT *a_port, const char *a_what);
+static	void	s_mh$lan_rcvbuf	(MH$PORT *a_port);
 
 
 
@@ -63,7 +64,8 @@ static	int	s_mh$lan_fail	(MH$PORT *a_port, const char *a_what);
 **
 **	Open the port: an AF_PACKET socket for the ethertype 60-07, bound to
 **	the interface, non-blocking; the MAC address and the MTU of the
-**	interface are taken into the port context.
+**	interface are taken into the port context.  With jumbo frames the
+**	receive buffer of the socket is enlarged (s_mh$lan_rcvbuf).
 **
 **  FORMAL PARAMETERS:
 **
@@ -119,7 +121,53 @@ size_t			l_len;
 	if ( bind(a_port->sd, (struct sockaddr *) &l_sll, sizeof(l_sll)) )
 		return	s_mh$lan_fail(a_port, "bind(AF_PACKET)");
 
+	if ( a_port->mtu > MH$K_LAN_ETHMTU )
+		s_mh$lan_rcvbuf(a_port);
+
 	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Enlarge the receive buffer of the socket for jumbo frames.  The
+**	kernel charges a frame of an MTU of 9000 some 16 KB, so its default
+**	of 208 KB holds 13 of them - less than the window of two nodes
+**	(MH$K_PIPE_QUOTA each); the frames beyond it are lost, and PEDRIVER
+**	sends them again.  SO_RCVBUFFORCE passes over net.core.rmem_max
+**	with CAP_NET_ADMIN; without it SO_RCVBUF is held to rmem_max.
+**	The buffer we got is read back and RCVBUF said when it is short.
+**	An MTU of 1500 keeps the default: it holds some 90 frames.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context, the socket open
+**
+**  RETURN VALUE:
+**	None: a small buffer is not a reason to stop.
+**--
+*/
+static	void	s_mh$lan_rcvbuf	(
+		MH$PORT *	a_port
+			)
+{
+int		l_want = MH$K_LAN_RCVBUF, l_got = 0;
+socklen_t	l_len = sizeof(l_got);
+
+	if ( setsockopt(a_port->sd, SOL_SOCKET, SO_RCVBUFFORCE, &l_want, sizeof(l_want)) )
+		setsockopt(a_port->sd, SOL_SOCKET, SO_RCVBUF, &l_want, sizeof(l_want));
+
+	if ( getsockopt(a_port->sd, SOL_SOCKET, SO_RCVBUF, &l_got, &l_len) )
+		{
+		$MHMSG(MH$_SYSERR, "getsockopt(SO_RCVBUF)", errno, strerror(errno));
+		return;
+		}
+
+	if ( l_got < 2 * l_want )
+		$MHMSG(MH$_RCVBUF, a_port->ifname, l_got, 2 * l_want, l_want);
 }
 
 

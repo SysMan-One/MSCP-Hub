@@ -60,7 +60,8 @@
 **		22-OCT-2026	RRL	X01-16 : the backend is io_uring, not threads (the comment).
 **		22-OCT-2026	RRL	X01-17 : the statistics block for MHMON; its messages.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: the buffers of a frame up to an MTU of 9000,
-**						the packets of a circuit sized by the MTU; JUMBO.
+**						the packets of a circuit sized by the MTU; JUMBO;
+**						the receive buffer of the socket for them, RCVBUF.
 **
 **--
 */
@@ -148,6 +149,7 @@ enum	{
 	MH$K_MSG_MODBUS,			/* The counters are served over Modbus/TCP	*/
 	MH$K_MSG_MBUSERR,			/* ... cannot be				*/
 	MH$K_MSG_JUMBO,				/* The LAN takes frames longer than 1500	*/
+	MH$K_MSG_RCVBUF,			/* The socket holds fewer jumbo frames than asked	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -199,6 +201,7 @@ enum	{
 #define	MH$_MODBUS		$MHSTS(MH$K_MSG_MODBUS,		STS$K_INFO)
 #define	MH$_MBUSERR		$MHSTS(MH$K_MSG_MBUSERR,	STS$K_WARN)
 #define	MH$_JUMBO		$MHSTS(MH$K_MSG_JUMBO,		STS$K_INFO)
+#define	MH$_RCVBUF		$MHSTS(MH$K_MSG_RCVBUF,		STS$K_WARN)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -222,6 +225,7 @@ enum	{
 #define	MH$K_LAN_OVHD		72		/* PEDRIVER: data field = DLL size - 72		*/
 #define	MH$K_LAN_ETHMTU		1500		/* An Ethernet without jumbo frames		*/
 #define	MH$K_LAN_MAXMTU		9000		/* Jumbo frames: a larger MTU is held to it	*/
+#define	MH$K_LAN_RCVBUF		(2 * 1024 * 1024)	/* SO_RCVBUF with jumbo frames; the kernel doubles it	*/
 #define	MH$K_SZ_MAXDATA		(MH$K_LAN_MAXMTU - NISCA$K_SZ_PAD)	/* DX header onwards, at most	*/
 #define	MH$K_SZ_FRAME		(NISCA$K_SZ_LANHDR + MH$K_SZ_MAXDATA)	/* A frame, at most		*/
 #define	MH$K_PIPE_QUOTA		16		/* What a node may send us unacknowledged	*/

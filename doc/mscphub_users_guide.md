@@ -457,6 +457,16 @@ packets of that size. `CHOPEN` shows the buffer the node offers. A node on an ad
 frames - the DE500 of an emulated Alpha, for one - goes on with 1426. One server serves both kinds of
 node at the same time.
 
+With jumbo frames the server asks the kernel for a receive buffer of 4 MB: the default of about 208
+KB holds only 13 frames of 9000 octets, fewer than two nodes send at once. The kernel gives it only
+up to `net.core.rmem_max`, unless the server holds `CAP_NET_ADMIN`; with a smaller buffer the server
+says `RCVBUF`. Raise the limit before the server starts:
+
+```
+# sysctl -w net.core.rmem_max=2097152
+# echo net.core.rmem_max=2097152 > /etc/sysctl.d/90-mscphub.conf
+```
+
 **Caution**
 
 > Set an MTU over 1500 only when every switch, bridge and tunnel between the server and the nodes
@@ -1376,6 +1386,17 @@ puts in; "(s)" stands for a plural ending.
     *Explanation:* /HELP names a topic the help library does not have.
 
     *User Action:* Give `mscphub /HELP` to see the topics.
+
+**RCVBUF**, warning
+
+    the socket of *interface* holds *n* octets of frames, not *n*: a burst of jumbo frames can be lost; raise net.core.rmem_max to *n*
+
+    *Explanation:* With jumbo frames the server asked for a receive buffer of 4 MB and got less: the
+    kernel holds it to `net.core.rmem_max` (Section 3.5). In a burst from several nodes the frames
+    beyond the buffer are lost, and the nodes send them again: the disks work, more slowly.
+
+    *User Action:* Raise `net.core.rmem_max` to the value the message gives and start the server
+    again.
 
 **RECORD**, information
 

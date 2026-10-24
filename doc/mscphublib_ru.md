@@ -1029,6 +1029,22 @@ sorry, no documentation on 'topic'
 
 Действия пользователя: Дайте mscphub /HELP, чтобы увидеть список тем.
 
+### RCVBUF
+
+```
+the socket of 'interface' holds 'n' octets of frames, not 'n': a burst of jumbo frames can be lost; raise net.core.rmem_max to 'n'
+```
+
+Важность: предупреждение.
+
+Пояснение: С jumbo-кадрами сервер попросил приёмный буфер в 4 МБ и
+получил меньше: ядро ограничивает его значением net.core.rmem_max. При
+одновременной передаче от нескольких узлов кадры сверх буфера теряются,
+и узлы посылают их снова: диски работают, но медленнее.
+
+Действия пользователя: Поднимите net.core.rmem_max до значения из
+сообщения (sysctl и файл в /etc/sysctl.d) и запустите сервер заново.
+
 ### RECORD
 
 ```

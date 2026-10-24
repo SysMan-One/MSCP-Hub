@@ -1028,6 +1028,22 @@ Explanation: /HELP names a topic the help library does not have.
 
 User Action: Give mscphub /HELP to see the topics.
 
+### RCVBUF
+
+```
+the socket of 'interface' holds 'n' octets of frames, not 'n': a burst of jumbo frames can be lost; raise net.core.rmem_max to 'n'
+```
+
+Severity: warning.
+
+Explanation: With jumbo frames the server asked for a receive buffer of
+4 MB and got less: the kernel holds it to net.core.rmem_max. In a burst
+from several nodes the frames beyond the buffer are lost, and the nodes
+send them again: the disks work, more slowly.
+
+User Action: Raise net.core.rmem_max to the value the message gives
+(sysctl, and a file in /etc/sysctl.d) and start the server again.
+
 ### RECORD
 
 ```
