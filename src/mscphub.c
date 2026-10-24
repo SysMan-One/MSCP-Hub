@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-19ECO8"
-#define	__REV__		"1.19.8"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -67,6 +67,7 @@
 **		23-OCT-2026	RRL	X01-19ECO6 : the System V scripts wait for the program to start on a busy computer.
 **		23-OCT-2026	RRL	X01-19ECO7 : the User's Guide, C.7 - the minicopy, a member brought back without an operator.
 **		24-OCT-2026	RRL	X01-19ECO8 : the User's Guide, 4.3 - the server holds no locks, a caution.
+**		24-OCT-2026	RRL	X01-20 : jumbo frames, an MTU up to 9000.
 **
 **--
 */
@@ -319,7 +320,7 @@ struct epoll_event		l_ev, l_evs [8];
 struct itimerspec		l_its = {0};
 struct signalfd_siginfo		l_si;
 sigset_t			l_sigs;
-uint8_t				l_frame [NISCA$K_MAXFRAME + 64];
+uint8_t				l_frame [MH$K_SZ_FRAME + 64];
 uint64_t			l_expired;
 unsigned			l_len;
 int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;

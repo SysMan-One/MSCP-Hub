@@ -769,6 +769,23 @@ expected. The server stops.
 
 User Action: Correct the value.
 
+### JUMBO
+
+```
+'interface' has an MTU of 'n': a packet of a block transfer carries up to 'octets' octets of data
+```
+
+Severity: information.
+
+Explanation: The MTU of the interface is larger than 1500: the server
+offers the nodes jumbo frames. An MTU over 9000 is held to 9000, and the
+message says so. A node uses them only when its own adapter has jumbo
+frames on (LAN_FLAGS bit 6) and NISCS_MAX_PKTSZ allows them.
+
+User Action: None, if every switch and tunnel on the way carries jumbo
+frames. If not, set the MTU back to 1500 and start the server again: a
+packet too long for the path is lost and the virtual circuit fails.
+
 ### LATSTATS
 
 ```

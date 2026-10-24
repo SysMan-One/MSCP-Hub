@@ -59,6 +59,8 @@
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT if it can (NODIRECT if not).
 **		22-OCT-2026	RRL	X01-16 : the backend is io_uring, not threads (the comment).
 **		22-OCT-2026	RRL	X01-17 : the statistics block for MHMON; its messages.
+**		24-OCT-2026	RRL	X01-20 : jumbo frames: the buffers of a frame up to an MTU of 9000,
+**						the packets of a circuit sized by the MTU; JUMBO.
 **
 **--
 */
@@ -68,11 +70,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-17"
+#define	__IDENT__	"X01-20"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.17.0"
+#define	__REV__		"1.20.0"
 #endif
 
 #ifndef	__FAC__
@@ -145,6 +147,7 @@ enum	{
 	MH$K_MSG_RECORD,			/* MHMON: recording to a T4 file		*/
 	MH$K_MSG_MODBUS,			/* The counters are served over Modbus/TCP	*/
 	MH$K_MSG_MBUSERR,			/* ... cannot be				*/
+	MH$K_MSG_JUMBO,				/* The LAN takes frames longer than 1500	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -195,6 +198,7 @@ enum	{
 #define	MH$_RECORD		$MHSTS(MH$K_MSG_RECORD,		STS$K_INFO)
 #define	MH$_MODBUS		$MHSTS(MH$K_MSG_MODBUS,		STS$K_INFO)
 #define	MH$_MBUSERR		$MHSTS(MH$K_MSG_MBUSERR,	STS$K_WARN)
+#define	MH$_JUMBO		$MHSTS(MH$K_MSG_JUMBO,		STS$K_INFO)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -216,6 +220,10 @@ enum	{
 #define	MH$K_DLY_MAX		100
 
 #define	MH$K_LAN_OVHD		72		/* PEDRIVER: data field = DLL size - 72		*/
+#define	MH$K_LAN_ETHMTU		1500		/* An Ethernet without jumbo frames		*/
+#define	MH$K_LAN_MAXMTU		9000		/* Jumbo frames: a larger MTU is held to it	*/
+#define	MH$K_SZ_MAXDATA		(MH$K_LAN_MAXMTU - NISCA$K_SZ_PAD)	/* DX header onwards, at most	*/
+#define	MH$K_SZ_FRAME		(NISCA$K_SZ_LANHDR + MH$K_SZ_MAXDATA)	/* A frame, at most		*/
 #define	MH$K_PIPE_QUOTA		16		/* What a node may send us unacknowledged	*/
 
 /*
@@ -229,7 +237,8 @@ enum	{
 #define	MH$K_TR_RTO_MAX		150		/* 3 s, NISCA$C_MAX_SEQ_TMO			*/
 #define	MH$K_TR_MAXREXMT	30		/* Timeouts of the head in a row to give up	*/
 #define	MH$K_TR_ACKBATCH	4		/* /ACK=HOLD: packets taken that are ACKed at once	*/
-#define	MH$K_SZ_TRPAY		(NISCA$K_MAXDATA - NISCA$K_SZ_DX - NISCA$K_TR_LEN_V15)	/* PPC opcode onwards	*/
+#define	MH$K_SZ_TRPAY		(MH$K_SZ_MAXDATA - NISCA$K_SZ_DX - NISCA$K_TR_LEN_V15)	/* PPC opcode onwards, at most	*/
+#define	MH$K_TR_NPKT		(MH$K_TR_WINDOW + MH$K_TR_XMTQ + MH$K_TR_RCVCACHE)	/* Packets of a circuit		*/
 
 /*
 **  PPD START/STACK of the server.  SWTYPE is not 'VMS ':
@@ -619,13 +628,14 @@ typedef struct mh_hrb_t {
 } MH$HRB;
 
 /*
-**  A packet of the transport: from the PPC opcode on
+**  A packet of the transport: from the PPC opcode on.  The data are in the pool of the circuit, PAYSZ octets a
+**  packet: a slot owns its buffer, a packet moves from slot to slot by its octets or by an exchange of buffers.
 */
 typedef struct mh_trpkt_t {
 	uint16_t	len;
 	uint32_t	seq;			/* Its number; the receive cache: of the slot	*/
 	int		valid;			/* ... it holds one				*/
-	uint8_t		data [MH$K_SZ_TRPAY];
+	uint8_t *	data;
 } MH$TRPKT;
 
 /*
@@ -645,6 +655,9 @@ typedef struct mh_vc_t {
 	int		sack;			/* ACK owed: 1 - on the next tick, 2 - now	*/
 	int		recover;		/* A timeout: a partial ACK resends the head	*/
 	unsigned	nowed;			/* Packets taken since our last ACK		*/
+
+	unsigned	paysz;			/* The data of a packet at most: by the MTU	*/
+	uint8_t *	pool;			/* The buffers of the packets, MH$K_TR_NPKT	*/
 
 	unsigned	nxmt;			/* Sent and not acknowledged: LAR+1 ...	*/
 	MH$TRPKT	xmt [MH$K_TR_WINDOW];

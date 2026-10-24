@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_VC"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -22,6 +22,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		24-OCT-2026	RRL	X01-20 : a circuit put back is put back with the data of its packets.
 **
 **--
 */
@@ -435,10 +436,12 @@ unsigned	l_n;
 	*/
 	{
 	static	MH$VC	s_hold;
+	static	uint8_t	s_holdpool [MH$K_TR_NPKT * MH$K_SZ_TRPAY];
 	uint64_t	l_ooo = l_port->tr_ooo, l_n0, l_n1;
 	unsigned	l_seq;
 
 	memcpy(&s_hold, l_vc, sizeof(s_hold));
+	memcpy(s_holdpool, l_vc->pool, MH$K_TR_NPKT * l_vc->paysz);
 	l_port->ackmode = MH$K_ACK_HOLD;
 
 	s_ntx = 0;
@@ -473,6 +476,7 @@ unsigned	l_n;
 	**  SEQ 2 without RSVP: delivered, the CON_RSP of it carries ACK 2
 	*/
 	memcpy(l_vc, &s_hold, sizeof(s_hold));
+	memcpy(l_vc->pool, s_holdpool, MH$K_TR_NPKT * l_vc->paysz);
 	s_ntx	= 0;
 	l_n0	= l_port->tr_ackpig;
 	s_t$frame(s_lbreq, sizeof(s_lbreq), 0x4B, 2, 1, 1, l_f);
@@ -482,6 +486,7 @@ unsigned	l_n;
 		"HOLD: the answer pays the ACK owed, no bare ACK");
 
 	memcpy(l_vc, &s_hold, sizeof(s_hold));
+	memcpy(l_vc->pool, s_holdpool, MH$K_TR_NPKT * l_vc->paysz);
 	l_port->ackmode	= MH$K_ACK_FLUSH;
 	l_port->tr_ooo	= l_ooo;
 	}
@@ -509,10 +514,12 @@ unsigned	l_n;
 	*/
 	{
 	static	MH$VC	s_save;
+	static	uint8_t	s_savepool [MH$K_TR_NPKT * MH$K_SZ_TRPAY];
 	const uint8_t	*l_tr;
 	unsigned	l_len13 = sizeof(s_lbreq) - (NISCA$K_TR_LEN_V15 - NISCA$K_TR_LEN_V13);
 
 	memcpy(&s_save, l_vc, sizeof(s_save));
+	memcpy(s_savepool, l_vc->pool, MH$K_TR_NPKT * l_vc->paysz);
 	l_vc->nxmt	= 0;
 	l_vc->due	= 0;
 	l_vc->hsr	= 0xFFFE;
@@ -553,6 +560,7 @@ unsigned	l_n;
 		&& (nisca$get32(s_tx[0] + T$K_TR + NISCA$K_TR_MSG_SEQ) == 0x10001), "V1.3 header, words 1/0: SEQ 65537, ACK 65536, answered with 65537");
 
 	memcpy(l_vc, &s_save, sizeof(s_save));
+	memcpy(l_vc->pool, s_savepool, MH$K_TR_NPKT * l_vc->paysz);
 	}
 
 	/*

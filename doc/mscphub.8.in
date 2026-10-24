@@ -20,9 +20,10 @@
 .\"		22-OCT-2026	RRL	X01-17 : /MODBUS; MONITOR - mhmon and the files of T4.
 .\"		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
 .\"		22-OCT-2026	RRL	X01-19ECO4 : AUTHOR without the AKA; the date of .TH.
+.\"		24-OCT-2026	RRL	X01-20 : jumbo frames.
 .\"
 .\"---
-.TH MSCPHUB 8 "22 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.TH MSCPHUB 8 "24 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
 .SH NAME
 mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
 .SH SYNOPSIS
@@ -276,6 +277,11 @@ update\-rc.d mscphub defaults; /etc/init.d/mscphub start; /etc/init.d/mscphub re
 The disk I/O is io_uring: a Linux kernel 5.10 or later, with io_uring not
 turned off (kernel.io_uring_disabled).  Do not serve a file or a device the
 host itself uses, and do not change one while it is served.
+.PP
+An MTU of the interface over 1500 gives jumbo frames, up to 9000: a node
+with jumbo frames on its adapter (LAN_FLAGS bit 6) and NISCS_MAX_PKTSZ
+raised takes packets of up to 8926 octets of data, any other node 1426.
+Raise the MTU only when the whole path carries jumbo frames.
 .PP
 OpenVMS, VMScluster, Alpha, DEC and HSC are trademarks of Hewlett Packard
 Enterprise Development LP or of VMS Software, Inc.; Linux is the registered

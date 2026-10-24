@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BLK"
-#define	__IDENT__	"X01-19ECO1"
-#define	__REV__		"1.19.1"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -32,6 +32,8 @@
 **		20-OCT-2026	RRL	X01-13 : the window opens to 16, RSVP at its half.
 **		22-OCT-2026	RRL	X01-19ECO1 : the backend is waited for up to 30 s, as in T_BK: a
 **						WRITE to an SD card of a busy small board takes more than 2 s.
+**		24-OCT-2026	RRL	X01-20 : jumbo frames: a circuit on an MTU of 9000, READ of 128 KB in 15 chunks,
+**						WRITE of 128 KB in 15, one of them out of order.
 **
 **--
 */
@@ -49,7 +51,7 @@
 
 #define	T$K_MAXTX	128
 
-static	uint8_t		s_tx [T$K_MAXTX] [NISCA$K_MAXFRAME];
+static	uint8_t		s_tx [T$K_MAXTX] [MH$K_SZ_FRAME];
 static	unsigned	s_txlen [T$K_MAXTX], s_ntx;
 static	int		s_fails, s_checks;
 
@@ -211,7 +213,7 @@ static	int	s_t$ppc	(
 		unsigned	a_len
 			)
 {
-uint8_t		l_f [NISCA$K_MAXFRAME];
+uint8_t		l_f [MH$K_SZ_FRAME];
 unsigned	l_len = T$K_PAY15 + a_len;
 
 	memcpy(l_f, s_conreq_alpha1, T$K_PAY15);
@@ -829,6 +831,148 @@ int		l_fd;
 	s_ntx = 0;
 	s_t$disk(l_port);
 	$CHECK(!s_ntx && !l_port->nhrb && !l_port->bufused && !l_port->units[0].current, "the READ comes back from the disk: freed, nothing sent, the unit free");
+
+	/*
+	**  Jumbo frames: the circuit made again on an MTU of 9000, the node
+	**  takes 8926 as well.  READ of 128 KB: 15 chunks, 14 x 8926 + 6108.
+	*/
+	mh$tr_reset(l_port, &l_port->nodes[0]);
+	free(l_vc->pool);
+	free(l_vc);
+	l_port->nodes[0].vc	= NULL;
+	l_port->mtu		= 9000;
+	l_port->bufsz		= 9000 - NISCA$K_SZ_PAD - MH$K_LAN_OVHD;
+	l_port->nodes[0].lcl_chseq = 0;		/* The restart makes it 1 again: the frames of ALPHA1 are of channel 1	*/
+
+	mh$cc_input(l_port, s_ccstart_alpha1, sizeof(s_ccstart_alpha1));
+	mh$cc_input(l_port, s_vack_alpha1, sizeof(s_vack_alpha1));
+	mh$cc_input(l_port, s_start_alpha1, sizeof(s_start_alpha1));
+	mh$cc_input(l_port, s_ack_alpha1, sizeof(s_ack_alpha1));
+
+	l_port->nodes[0].bufsz = 8926;
+	l_vc = l_port->nodes[0].vc;
+	$CHECK(l_vc && (l_vc->pbstate == MH$K_PB_OPEN) && (l_vc->paysz == 9000 - NISCA$K_SZ_PAD - NISCA$K_SZ_DX - NISCA$K_TR_LEN_V15),
+		"jumbo: the circuit is open again, its packets sized by the MTU of 9000");
+	l_vc->window = l_vc->maxwin;
+	s_seq = 1;
+
+	memset(l_b, ' ', 52);
+	nisca$put16(l_b + NISCA$K_SCS_MIN_CR, 2);
+	nisca$put16(l_b + NISCA$K_SCS_STATUS, 1);
+	memcpy(l_b + 4, "MSCP$DISK", 9);
+	memcpy(l_b + 20, "VMS$DISK_CL_DRVR", 16);
+	s_t$scs(l_port, NISCA$K_SCS_CON_REQ, 10, 0, l_b, 52);
+	memset(l_b, 0, 4);
+	nisca$put16(l_b + NISCA$K_SCS_STATUS, 1);
+	s_t$scs(l_port, NISCA$K_SCS_ACCP_RSP, 0, T$K_CONID_US, l_b, 4);
+	s_ntx = 0;
+	s_t$cmd(l_cmd, 0x000F0001, 0x4000, MSCP$K_OP_ONLIN, 0, 0, 0);
+	s_t$mscp(l_port, l_cmd);
+	$CHECK((l_vc->cdt[0].state == MH$K_CDT_OPEN) && (s_ntx == 1) && s_t$isend(0, 0x000F0001, 0), "jumbo: connected again, ONLINE: SUCC");
+
+	s_ntx = 0;
+	s_t$cmd(l_cmd, 0x000F0002, 0x4000, MSCP$K_OP_READ, 0, MH$K_MSCP_MAXBCNT, 0);
+	s_t$mscp(l_port, l_cmd);
+	s_t$disk(l_port);
+
+	for ( unsigned l_last = 0; s_ntx != l_last; )
+		{
+		l_last = s_ntx;
+		s_t$ack(l_port);
+		}
+
+	l_ok = (s_ntx == 15);
+	l_tag = nisca$get32(s_t$pay(0) + 5);
+
+	l_fd = open(l_img, O_RDONLY);
+	l_ok = l_ok && (l_fd >= 0) && (MH$K_MSCP_MAXBCNT == pread(l_fd, s_got, MH$K_MSCP_MAXBCNT, 0));
+	close(l_fd);
+
+	for ( unsigned i = 0, l_want = 0; l_ok && (i < s_ntx); i++ )
+		{
+		l_p = s_t$pay(i);
+		l_off = nisca$get32(l_p + 1 + NISCA$K_BLK_REC_BOFF);
+		l_n = nisca$get32(l_p + 1 + NISCA$K_BLK_XCT_LEN);
+		l_ok = (l_off == l_want) && (nisca$get32(l_p + 5) == l_tag) && (l_p[0] == ((i == 14) ? NISCA$K_PPC_SNT_DAT_LP : NISCA$K_PPC_SNT_DAT))
+			&& (l_n == ((i == 14) ? 131072 - 14 * 8926 : 8926)) && (s_txlen[i] <= MH$K_SZ_FRAME);
+
+		l_ok = l_ok && !memcmp(l_p + 1 + NISCA$K_BLK_HLEN, s_got + l_off, l_n);
+
+		l_want += l_n;
+		}
+
+	$CHECK(l_ok, "jumbo: READ of 128 KB in 15 chunks, 14 x 8926 + 6108, in order, the data of the image");
+	memcpy(l_req, s_t$pay(0), sizeof(l_req));
+	s_ntx = 0;
+	s_t$answer(l_port, s_e0_retcnf_a2, sizeof(s_e0_retcnf_a2), l_req);
+	$CHECK(s_t$isend(0, 0x000F0002, MSCP$K_ST_SUCC) && (nisca$get32(s_t$end(0) + MSCP$K_BYTE_CNT) == MH$K_MSCP_MAXBCNT), "jumbo: RET_CNF, SUCC, 128 KB");
+
+	/*
+	**  WRITE of 128 KB at LBN 1000 in chunks of 8926 from the node, the
+	**  third before the second: it waits in the receive cache, full size
+	*/
+	{
+	static	uint8_t	s_big [MH$K_MSCP_MAXBCNT];
+	uint8_t		l_p [MH$K_SZ_TRPAY];
+	uint64_t	l_ooo = l_port->tr_ooo;
+	uint16_t	l_seq0;
+	static	const unsigned	s_order [15] = { 0, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
+
+	for ( unsigned i = 0; i < sizeof(s_big); i++ )
+		s_big[i] = (uint8_t) (0x3C ^ (i * 13) ^ (i >> 11));
+
+	s_ntx = 0;
+	s_t$cmd(l_cmd, 0x000F0004, 0x4000, MSCP$K_OP_WRITE, 0, MH$K_MSCP_MAXBCNT, 1000);
+	s_t$mscp(l_port, l_cmd);
+	memcpy(l_req, s_t$pay(0), sizeof(l_req));
+	l_seq0 = s_seq;
+	s_ntx = 0;
+
+	for ( unsigned k = 0; k < 15; k++ )
+		{
+		unsigned	i = s_order[k];
+		uint32_t	l_o = i * 8926, l_c = $MIN(8926, MH$K_MSCP_MAXBCNT - l_o);
+
+		memcpy(l_p, l_req, 1 + NISCA$K_BLK_HLEN);
+		l_p[0] = (i == 14) ? NISCA$K_PPC_RET_DAT_LP : NISCA$K_PPC_RET_DAT;
+		nisca$put32(l_p + 1 + NISCA$K_BLK_XCT_LEN, l_c);
+		nisca$put32(l_p + 1 + NISCA$K_BLK_SND_BOFF, l_o);
+		nisca$put32(l_p + 1 + NISCA$K_BLK_REC_BOFF, l_o);
+		memcpy(l_p + 1 + NISCA$K_BLK_HLEN, s_big + l_o, l_c);
+		s_seq = (uint16_t) (l_seq0 + i);
+		s_t$ppc(l_port, l_p, 1 + NISCA$K_BLK_HLEN + l_c);
+		}
+
+	s_seq = (uint16_t) (l_seq0 + 15);
+	s_t$disk(l_port);
+
+	l_fd = open(l_img, O_RDONLY);
+	$CHECK(s_t$isend(0, 0x000F0004, MSCP$K_ST_SUCC) && (l_port->tr_ooo == l_ooo + 1) && (l_fd >= 0)
+		&& (MH$K_MSCP_MAXBCNT == pread(l_fd, s_got, MH$K_MSCP_MAXBCNT, 1000 * 512)) && !memcmp(s_got, s_big, MH$K_MSCP_MAXBCNT),
+		"jumbo: WRITE of 128 KB in 15 chunks of 8926, one out of order: SUCC, the data in the image");
+	close(l_fd);
+	}
+
+	/*
+	**  A node without jumbo frames on the same port: the chunks stay 1426
+	*/
+	l_port->nodes[0].bufsz = 1426;
+	s_ntx = 0;
+	s_t$cmd(l_cmd, 0x000F0003, 0x4000, MSCP$K_OP_READ, 0, 4096, 0);
+	s_t$mscp(l_port, l_cmd);
+	s_t$disk(l_port);
+
+	for ( unsigned l_last = 0; s_ntx != l_last; )
+		{
+		l_last = s_ntx;
+		s_t$ack(l_port);
+		}
+
+	$CHECK((s_ntx == 3) && (nisca$get32(s_t$pay(0) + 1 + NISCA$K_BLK_XCT_LEN) == 1426) && (nisca$get32(s_t$pay(2) + 1 + NISCA$K_BLK_XCT_LEN) == 4096 - 2 * 1426),
+		"jumbo port, a node of 1426: READ of 4 KB in 1426 + 1426 + 1244");
+	memcpy(l_req, s_t$pay(0), sizeof(l_req));
+	s_ntx = 0;
+	s_t$answer(l_port, s_e0_retcnf_a2, sizeof(s_e0_retcnf_a2), l_req);
 
 	unlink(l_img);
 	unlink(l_img2);

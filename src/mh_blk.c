@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBLK"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -46,6 +46,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		24-OCT-2026	RRL	X01-20 : a chunk is held to the packet of the circuit as well.
 **
 **--
 */
@@ -173,12 +174,15 @@ int		l_last;
 
 	/*
 	**  The size of the chunk: what the peer takes and what we said we take
-	**  (BUS_BUFFER_SIZE of the CC messages); 1426 on an Ethernet
+	**  (BUS_BUFFER_SIZE of the CC messages); 1426 on an Ethernet, 8926 with
+	**  jumbo frames on both.  Never more than a packet of the circuit holds.
 	*/
 	l_max = a_port->bufsz;
 
 	if ( a_node->bufsz && (a_node->bufsz < l_max) )
 		l_max = a_node->bufsz;
+
+	l_max = $MIN(l_max, l_vc->paysz - 1 - NISCA$K_BLK_HLEN);
 
 	l_size = $MIN(l_hrb->bcnt - l_hrb->moved, l_max);
 	l_last = (l_hrb->moved + l_size == l_hrb->bcnt);

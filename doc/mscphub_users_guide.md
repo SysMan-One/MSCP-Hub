@@ -3,7 +3,7 @@
 ## User's Guide
 
     Order Number:       MSCPHUB-UG-0119
-    Software Version:   MSCPHUB Version X01-19
+    Software Version:   MSCPHUB Version X01-20
     Operating System:   Linux
     Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-18.
     Date:               22-OCT-2026
@@ -189,7 +189,7 @@ PEDRIVER are expected to work.
 MSCPHUB needs little: the C library, liburing, the StarLet package and a kernel of the last five
 years - no database, no interpreter, no framework. The server is 250 to 300 KB, MHMON about 150 KB,
 and a running server takes under 3 MB of memory, and its data buffers as the commands need them, at
-most 16 MB.
+most 16 MB. With jumbo frames (Section 3.5) a virtual circuit takes 1 MB instead of 160 KB.
 
 So the hub of a home VMScluster can be a small board. The same kit builds and passes all its tests on
 a NaPi-C board of the NaPi World (https://github.com/napilab/napi-boards): a Rockchip RK3308, four
@@ -220,8 +220,8 @@ MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-19.tar.gz
-# cd MSCPHUB-X01-19
+# tar xzf MSCPHUB-X01-20.tar.gz
+# cd MSCPHUB-X01-20
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -431,6 +431,37 @@ LAN:
 
 After the 4 seconds of `/LISTEN` there is a `NEWNODE` for every OpenVMS node. Press `Ctrl/C`. No
 `NEWNODE`: see Chapter 7.
+
+## 3.5 Jumbo Frames
+
+On an Ethernet a packet of a block transfer carries 1426 octets of data. With jumbo frames it carries
+up to 8926, and a READ of 64 KB takes 8 packets instead of 46. The server uses jumbo frames when the
+MTU of its Linux interface is larger than 1500:
+
+```
+# ip link set eth1 mtu 9000
+```
+
+Set the MTU before the server starts: it reads the MTU at start and says `JUMBO`. It offers the nodes a
+buffer of the MTU less 74 octets, 8926 for an MTU of 9000; a larger MTU is held to 9000.
+
+A node uses jumbo frames only when it can do so itself. On the OpenVMS node:
+
+* The LAN adapter must be a Gigabit one that can do jumbo frames, with jumbo frames turned on: bit 6
+  (value 64) of the SYSGEN parameter `LAN_FLAGS`.
+* The SYSGEN parameter `NISCS_MAX_PKTSZ` holds the size of a packet of PEDRIVER. Raise it, for
+  example to 8192.
+
+The node takes the smaller of its own buffer and that of the server, and then tests the path with
+packets of that size. `CHOPEN` shows the buffer the node offers. A node on an adapter without jumbo
+frames - the DE500 of an emulated Alpha, for one - goes on with 1426. One server serves both kinds of
+node at the same time.
+
+**Caution**
+
+> Set an MTU over 1500 only when every switch, bridge and tunnel between the server and the nodes
+> carries jumbo frames. The node tests the path, the server does not: a packet too long for the path
+> is lost, and the virtual circuit to the node fails (`VCCLOSE`). Then set the MTU back to 1500.
 
 ---
 
@@ -1176,6 +1207,16 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* Correct the value.
 
+**JUMBO**, information
+
+    *interface* has an MTU of *n*: a packet of a block transfer carries up to *octets* octets of data
+
+    *Explanation:* The MTU of the interface is larger than 1500: the server offers the nodes jumbo
+    frames (Section 3.5). An MTU over 9000 is held to 9000, and the message says so.
+
+    *User Action:* None, if every switch and tunnel on the way carries jumbo frames. If not, set the
+    MTU back to 1500 and start the server again.
+
 **LATSTATS**, information
 
     unit *name*, *operation*: *n* command(s), average *n* us (backend *n*, transfers *n*, the rest *n*),
@@ -1863,7 +1904,7 @@ The map has a version in register 0. A change of the map raises it.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Seconds since the server started |
-| 10 | 4 | Version of the server, text: X01-19 |
+| 10 | 4 | Version of the server, text: X01-20 |
 | 14 | 4 | /NODE, text |
 | 18 | 8 | /INTERFACE, text |
 | 100 | 4 | Frames received |
@@ -1941,4 +1982,4 @@ The function 2B/0E answers the basic objects:
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-19 |
+| 2 | MajorMinorRevision | X01-20 |

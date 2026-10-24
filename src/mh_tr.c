@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTR"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -63,6 +63,7 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **		20-OCT-2026	RRL	X01-13 : 16 packets in flight, RSVP at half the window.
+**		24-OCT-2026	RRL	X01-20 : jumbo frames: the packets of a circuit are sized by the MTU.
 **
 **--
 */
@@ -104,7 +105,7 @@ static	int	s_mh$tr_xmit	(
 		unsigned	a_len
 			)
 {
-uint8_t		l_data [NISCA$K_MAXDATA], l_dxdst [NISCA$K_SZ_MAC], *l_tr = l_data + NISCA$K_SZ_DX;
+uint8_t		l_data [MH$K_SZ_MAXDATA], l_dxdst [NISCA$K_SZ_MAC], *l_tr = l_data + NISCA$K_SZ_DX;
 MH$VC		*l_vc = a_node->vc;
 
 	nisca$node_mac(a_node->sysid, l_dxdst);
@@ -187,10 +188,18 @@ static	int	s_mh$tr_bare	(
 **	empty the caches.  The window is held to the PIPE_QUOTA the peer told
 **	in its CC messages.
 **
+**	The buffers of the packets are allocated with the circuit, PAYSZ
+**	octets each: what a frame of the MTU of the port carries after the DX
+**	and TR headers (an MTU over 9000 is held to it, none - a test - is
+**	1500).  162 KB for a circuit on an Ethernet, 1 MB with jumbo frames.
+**
 **  FORMAL PARAMETERS:
 **
 **	a_port		The port context
 **	a_node		The node
+**
+**  IMPLICIT INPUTS:
+**	MTU of the port.
 **
 **  RETURN VALUE:
 **	STS$K_SUCCESS; MH$_SYSERR - no memory.
@@ -201,8 +210,35 @@ int	mh$tr_open	(
 		MH$NODE *	a_node
 			)
 {
-	if ( !a_node->vc && !(a_node->vc = calloc(1, sizeof(MH$VC))) )
-		return	$MHMSG(MH$_SYSERR, "calloc(MH$VC)", errno, strerror(errno));
+MH$VC		*l_vc;
+unsigned	l_mtu, l_n = 0;
+
+	if ( !a_node->vc )
+		{
+		l_mtu = (a_port->mtu > 0) ? (unsigned) $MIN(a_port->mtu, MH$K_LAN_MAXMTU) : MH$K_LAN_ETHMTU;
+
+		if ( !(l_vc = calloc(1, sizeof(MH$VC))) )
+			return	$MHMSG(MH$_SYSERR, "calloc(MH$VC)", errno, strerror(errno));
+
+		l_vc->paysz = l_mtu - NISCA$K_SZ_PAD - NISCA$K_SZ_DX - NISCA$K_TR_LEN_V15;
+
+		if ( !(l_vc->pool = malloc((size_t) MH$K_TR_NPKT * l_vc->paysz)) )
+			{
+			free(l_vc);
+			return	$MHMSG(MH$_SYSERR, "malloc(the packets of a circuit)", errno, strerror(errno));
+			}
+
+		for ( unsigned i = 0; i < MH$K_TR_WINDOW; i++ )
+			l_vc->xmt[i].data = l_vc->pool + (size_t) (l_n++) * l_vc->paysz;
+
+		for ( unsigned i = 0; i < MH$K_TR_XMTQ; i++ )
+			l_vc->q[i].data = l_vc->pool + (size_t) (l_n++) * l_vc->paysz;
+
+		for ( unsigned i = 0; i < MH$K_TR_RCVCACHE; i++ )
+			l_vc->rcv[i].data = l_vc->pool + (size_t) (l_n++) * l_vc->paysz;
+
+		a_node->vc = l_vc;
+		}
 
 	mh$tr_reset(a_port, a_node);
 
@@ -297,7 +333,8 @@ unsigned	l_len;
 
 		if ( l_vc->nq )
 			{
-			*l_pkt = l_vc->q[l_vc->qhead];
+			l_pkt->len = l_vc->q[l_vc->qhead].len;
+			memcpy(l_pkt->data, l_vc->q[l_vc->qhead].data, l_pkt->len);
 			l_vc->qhead = (l_vc->qhead + 1) % MH$K_TR_XMTQ;
 			l_vc->nq--;
 			}
@@ -359,7 +396,7 @@ int	mh$tr_send_ppc	(
 MH$VC		*l_vc = a_node->vc;
 MH$TRPKT	*l_pkt;
 
-	if ( !l_vc || (l_vc->pbstate == MH$K_PB_CLOSED) || (a_len > MH$K_SZ_TRPAY) )
+	if ( !l_vc || (l_vc->pbstate == MH$K_PB_CLOSED) || (a_len > l_vc->paysz) )
 		return	STS$K_ERROR;
 
 	if ( l_vc->nq >= MH$K_TR_XMTQ )
@@ -429,7 +466,7 @@ int	mh$tr_send_seq	(
 MH$VC		*l_vc = a_node->vc;
 MH$TRPKT	*l_pkt;
 
-	if ( !l_vc || (l_vc->pbstate == MH$K_PB_CLOSED) || (a_len + 1 > MH$K_SZ_TRPAY) )
+	if ( !l_vc || (l_vc->pbstate == MH$K_PB_CLOSED) || (a_len + 1 > l_vc->paysz) )
 		return	STS$K_ERROR;
 
 	if ( l_vc->nq >= MH$K_TR_XMTQ )
@@ -472,7 +509,7 @@ int	mh$tr_send_dg	(
 {
 uint8_t	l_pay [MH$K_SZ_TRPAY];
 
-	if ( !a_node->vc || (a_len + 1 > sizeof(l_pay)) )
+	if ( !a_node->vc || (a_len + 1 > a_node->vc->paysz) )
 		return	STS$K_ERROR;
 
 	l_pay[0] = NISCA$K_PPC_SNT_DG;
@@ -539,6 +576,7 @@ static	int	s_mh$tr_ack	(
 {
 MH$VC	*l_vc = a_node->vc;
 int32_t	l_new = (int32_t) (a_ack - l_vc->lar);
+uint8_t	*l_free [MH$K_TR_WINDOW];
 
 	/*
 	**  Seen before, or never sent (NAKs are not implemented, by PEDRIVER
@@ -547,8 +585,18 @@ int32_t	l_new = (int32_t) (a_ack - l_vc->lar);
 	if ( (l_new <= 0) || ((unsigned) l_new > l_vc->nxmt) )
 		return	STS$K_SUCCESS;
 
+	/*
+	**  The slots acknowledged give their buffers to the tail the move
+	**  leaves behind: no two slots share one
+	*/
+	for ( int i = 0; i < l_new; i++ )
+		l_free[i] = l_vc->xmt[i].data;
+
 	l_vc->nxmt -= (unsigned) l_new;
 	memmove(l_vc->xmt, l_vc->xmt + l_new, l_vc->nxmt * sizeof(l_vc->xmt[0]));
+
+	for ( int i = 0; i < l_new; i++ )
+		l_vc->xmt[l_vc->nxmt + (unsigned) i].data = l_free[i];
 
 	l_vc->lar	= a_ack;
 	l_vc->retries	= 0;
@@ -780,7 +828,7 @@ int		l_status = STS$K_SUCCESS;
 		l_slot = &l_vc->rcv[l_seq % MH$K_TR_RCVCACHE];
 		l_slot->valid	= 1;
 		l_slot->seq	= l_seq;
-		l_slot->len	= (uint16_t) $MIN(l_paylen, sizeof(l_slot->data));
+		l_slot->len	= (uint16_t) $MIN(l_paylen, l_vc->paysz);
 		memcpy(l_slot->data, l_pay, l_slot->len);
 
 		a_port->tr_ooo++;

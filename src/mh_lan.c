@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHLAN"
-#define	__IDENT__	"X01-10"
-#define	__REV__		"1.10.0"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -35,6 +35,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		24-OCT-2026	RRL	X01-20 : a frame up to an MTU of 9000.
 **
 **--
 */
@@ -232,7 +233,7 @@ int	mh$lan_close	(
 **	a_port		The port context
 **	a_dst		Destination MAC: an adapter, or the group multicast
 **	a_data		DX header and what follows it
-**	a_len		Its length, at most NISCA$K_MAXDATA
+**	a_len		Its length, at most MH$K_SZ_MAXDATA
 **
 **  IMPLICIT INPUTS/OUTPUTS:
 **	The TX counters of the port; XMIT of the port, when set, takes the
@@ -251,12 +252,12 @@ int	mh$lan_send	(
 		unsigned	a_len
 			)
 {
-uint8_t		l_frame [NISCA$K_MAXFRAME];
+uint8_t		l_frame [MH$K_SZ_FRAME];
 unsigned	l_frmlen = NISCA$K_SZ_LANHDR + a_len;
 ssize_t		l_sent;
 
-	if ( a_len > NISCA$K_MAXDATA )
-		return	$LOG_FAO(STS$K_ERROR, "Frame data of !UL octets is longer than !UL", a_len, NISCA$K_MAXDATA);
+	if ( a_len > MH$K_SZ_MAXDATA )
+		return	$LOG_FAO(STS$K_ERROR, "Frame data of !UL octets is longer than !UL", a_len, MH$K_SZ_MAXDATA);
 
 	memcpy(l_frame, a_dst, NISCA$K_SZ_MAC);
 	memcpy(l_frame + NISCA$K_SZ_MAC, a_port->mac, NISCA$K_SZ_MAC);

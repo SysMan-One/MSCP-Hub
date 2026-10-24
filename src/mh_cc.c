@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-13"
-#define	__REV__		"1.13.0"
+#define	__IDENT__	"X01-20"
+#define	__REV__		"1.20.0"
 
 /*
 **++
@@ -57,6 +57,7 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA 16.
+**		24-OCT-2026	RRL	X01-20 : jumbo frames: BUS_BUFFER_SIZE by an MTU up to 9000, JUMBO.
 **
 **--
 */
@@ -201,11 +202,16 @@ unsigned	l_len, l_mtu;
 
 	/*
 	**  BUS_BUFFER_SIZE = the data field of the LAN driver less 72:
-	**  1498 - 72 = 1426 on an Ethernet.  Jumbo frames
-	**  are for v2, the MTU is held to 1500 here.
+	**  1498 - 72 = 1426 on an Ethernet, 8926 with jumbo frames of an MTU
+	**  of 9000.  PEDRIVER takes the smaller of its own and ours
+	**  (CC.NEGOTIATE_BUFFER_SIZE) and probes the path for it; a node on
+	**  an adapter without jumbo frames goes on at 1426.
 	*/
-	l_mtu = (unsigned) $MIN(a_port->mtu, 1500);
+	l_mtu = (unsigned) $MIN(a_port->mtu, MH$K_LAN_MAXMTU);
 	a_port->bufsz = (uint16_t) (l_mtu - NISCA$K_SZ_PAD - MH$K_LAN_OVHD);
+
+	if ( l_mtu > MH$K_LAN_ETHMTU )
+		$MHMSG(MH$_JUMBO, a_port->ifname, a_port->mtu, (a_port->mtu > MH$K_LAN_MAXMTU) ? ", held to 9000" : "", a_port->bufsz);
 
 	if ( !(1 & (l_status = mh$vmstime(&a_port->incarn))) )
 		return	$MHMSG(MH$_SYSERR, "clock_gettime(CLOCK_REALTIME)", errno, strerror(errno));

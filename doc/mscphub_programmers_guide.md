@@ -3,7 +3,7 @@
 ## Programmer's Guide
 
     Order Number:       MSCPHUB-PG-0119
-    Software Version:   MSCPHUB Version X01-19
+    Software Version:   MSCPHUB Version X01-20
     Operating System:   Linux
     Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-18.
     Date:               22-OCT-2026
@@ -290,6 +290,12 @@ a window of at most 16 packets, a cache of the packets that come out of order, a
 next packet of the server, or alone as `/ACK` says. The window is filled from the queue of messages
 first, then with the chunks of the block transfer at the head of the circuit, which are made only
 when there is room.
+
+The packets of a circuit - 16 in the window, 64 in the queue, 32 in the receive cache - have their
+buffers in one pool, allocated with the circuit and sized by the MTU of the port: 1426 octets of data
+a chunk on an Ethernet, 8926 with jumbo frames of an MTU of 9000. A slot owns its buffer: a queued
+message is copied into the slot of the window, and the slots an ACK frees hand their buffers to the
+tail that the move of the window leaves behind.
 
 ## 3.5 mh_ppd.c
 
@@ -741,6 +747,7 @@ not in the kit.
 | 8 Modbus clients at a time | `mh_mbus.c` |
 | 64 nodes remembered | `mh_cc.c`, `MANYNODES` |
 | Window of 16 packets per circuit | `mh_tr.c` |
+| Jumbo frames up to an MTU of 9000 | `MH$K_LAN_MAXMTU`, `mh_def.h` |
 | No member disk of a shadow set (no forced error) | `mh_mscp.c` |
 | No tapes, no boot of satellites | not implemented |
 | No cluster over IP | not implemented |
