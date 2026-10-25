@@ -298,6 +298,10 @@ next packet of the server, or alone as `/ACK` says. The window is filled from th
 first, then with the chunks of the block transfer at the head of the circuit, which are made only
 when there is room.
 
+Every packet with an acknowledgement carries FLAG_EXT with LAST_ACCEPTED equal to it, as PEDRIVER
+sends them. A VMS node takes the time from its packet to that acknowledgement as the delay of the
+channel (`SCACP SHOW CHANNEL`); without LAST_ACCEPTED it measures the channel by probes only.
+
 The packets of a circuit - 16 in the window, 64 in the queue, 32 in the receive cache - have their
 buffers in one pool, allocated with the circuit and sized by the MTU of the port: 1426 octets of data
 a chunk on an Ethernet, 8926 with jumbo frames of an MTU of 9000. A slot owns its buffer: a queued
@@ -757,6 +761,7 @@ not in the kit.
 |---|---|
 | 8 disks per server | `/UNIT0` to `/UNIT7` in `s_opts`, `mscphub.c` |
 | One LAN adapter | `mh_lan.c` |
+| One channel to a node: a node with two adapters on the LAN of the server uses one | `mh_cc.c`, `MH$NODE` |
 | 8 Modbus clients at a time | `mh_mbus.c` |
 | 64 nodes remembered | `mh_cc.c`, `MANYNODES` |
 | Window of 16 packets per circuit | `mh_tr.c` |

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-21"
-#define	__REV__		"1.21.0"
+#define	__IDENT__	"X01-21ECO1"
+#define	__REV__		"1.21.1"
 
 /*
 **++
@@ -70,6 +70,7 @@
 **		24-OCT-2026	RRL	X01-20 : jumbo frames, an MTU up to 9000.
 **		24-OCT-2026	RRL	X01-20ECO1 : the User's Guide, Appendix C.8: jumbo frames measured.
 **		25-OCT-2026	RRL	X01-21 : the system disk of a diskless satellite (SOLICIT_SRV).
+**		25-OCT-2026	RRL	X01-21ECO1 : LAST_ACCEPTED in the TR header: the delay of the channel.
 **
 **--
 */

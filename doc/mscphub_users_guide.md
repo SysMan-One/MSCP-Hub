@@ -181,7 +181,8 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 * It cannot yet be a member disk of a shadow set.
 * It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
-* It uses one LAN adapter.
+* It uses one LAN adapter, and talks to a node through one adapter of the node. A node with two
+  adapters on the LAN of the server uses the first one that opens a channel (see C.9).
 
 MSCPHUB is verified with OpenVMS Alpha Version 8.3, also as the server of the system disk of a
 satellite (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
@@ -2053,6 +2054,13 @@ loaded the satellite by MOP over its DE500.
 
 The loader offers a block of 1424 octets, not 1426, and says `BYE` at the end of each part it
 reads.
+
+The same day SAT1 booted with a DE500 and an 82540EM on the jumbo LAN of MHUB3. Its 82540EM
+came up with jumbo frames, and its channels to the other nodes and to MHUB carried 8100 octets. To
+MHUB3, the server of its own system disk, the disk traffic stayed on the DE500 at 1426: the server
+keeps one channel to a node, here the one of the DE500, by which the loader came, and drops the
+packets of the circuit that come by the other adapter. OpenVMS then marks that channel lossy and
+does not use it.
 
 ## C.10 Reading These Numbers
 

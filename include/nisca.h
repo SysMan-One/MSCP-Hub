@@ -31,6 +31,7 @@
 **  MODIFICATION HISTORY:
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
+**		25-OCT-2026	RRL	X01-21ECO1 : FLAG_EXT: LAST_ACCEPTED valid.
 **
 **--
 */
@@ -40,11 +41,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-10"
+#define	__IDENT__	"X01-21"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.10.0"
+#define	__REV__		"1.21.0"
 #endif
 
 #include	<stdint.h>
@@ -163,6 +164,8 @@ enum	{
 #define	NISCA$M_TR_RSVP		0x10
 #define	NISCA$M_TR_REXMT	0x20
 #define	NISCA$M_TR_FLAG_EXT	0x40
+
+#define	NISCA$M_TR_FEXT_LAST_ACC 0x0001		/* FLAG_EXT: LAST_ACCEPTED is valid			*/
 
 /*
 **  PPC opcodes, NISCA$B_PPC_OPC

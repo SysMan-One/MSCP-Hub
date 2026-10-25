@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTR"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-21ECO1"
+#define	__REV__		"1.21.1"
 
 /*
 **++
@@ -16,7 +16,11 @@
 **
 **  DESCRIPTION: The server sends the TR header of V1.5, the way PEDRIVER V8.3
 **		lays it out: the numbers in words for V1.3 and in longwords
-**		for V1.4 on, then the PPC opcode.
+**		for V1.4 on, then the PPC opcode.  A packet with an ACK
+**		carries FLAG_EXT with LAST_ACCEPTED = the ACK, as PEDRIVER
+**		does: the node takes the time from its packet to our ACK for
+**		the delay of the channel (SCACP SHOW CHANNEL); without it the
+**		node measures the channel by its probes only.
 **		It takes in any version, by TR_PAD: the opcode is at 6 + PAD;
 **		the 16-bit ACK and SEQ at +2 and +4 are kept by V1.4+ senders
 **		too, as the low words of their 32-bit numbers.
@@ -64,6 +68,8 @@
 **		20-OCT-2026	RRL	X01-11 : /ACK=HOLD is the default.
 **		20-OCT-2026	RRL	X01-13 : 16 packets in flight, RSVP at half the window.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: the packets of a circuit are sized by the MTU.
+**		25-OCT-2026	RRL	X01-21ECO1 : LAST_ACCEPTED on every packet with an ACK, as PEDRIVER sends it:
+**						a VMS node measures the delay of its channel to us by it.
 **
 **--
 */
@@ -125,9 +131,12 @@ MH$VC		*l_vc = a_node->vc;
 
 	/*
 	**  The header of V1.5, the way PEDRIVER V8.3 lays it out: the numbers
-	**  in words for V1.3 and in longwords for V1.4 on; LAST_ACCEPTED is
-	**  not given (no FLAG_EXT)
+	**  in words for V1.3 and in longwords for V1.4 on; with an ACK,
+	**  LAST_ACCEPTED is the ACK (FLAG_EXT)
 	*/
+	if ( a_flags & NISCA$M_TR_ACK )
+		a_flags |= NISCA$M_TR_FLAG_EXT;
+
 	memset(l_tr, 0, NISCA$K_TR_LEN_V15);
 	l_tr[NISCA$K_TR_FLAG]	= (uint8_t) a_flags;
 	l_tr[NISCA$K_TR_PAD]	= NISCA$K_TR_LEN_V15 - NISCA$K_TR_LEN_V10;
@@ -137,6 +146,12 @@ MH$VC		*l_vc = a_node->vc;
 	l_tr[NISCA$K_TR_PAD_DLEN] = NISCA$K_TR_PAD_DLEN_V15;
 	nisca$put32(l_tr + NISCA$K_TR_ACK_SEQ, (a_flags & NISCA$M_TR_ACK) ? l_vc->hsr : 0);
 	nisca$put32(l_tr + NISCA$K_TR_MSG_SEQ, a_seq);
+
+	if ( a_flags & NISCA$M_TR_ACK )
+		{
+		nisca$put32(l_tr + NISCA$K_TR_LAST_ACC, l_vc->hsr);
+		nisca$put16(l_tr + NISCA$K_TR_FLAG_EXT, NISCA$M_TR_FEXT_LAST_ACC);
+		}
 
 	if ( a_len )
 		memcpy(l_tr + NISCA$K_TR_LEN_V15, a_pay, a_len);

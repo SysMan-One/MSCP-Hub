@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_VC"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-21ECO1"
+#define	__REV__		"1.21.1"
 
 /*
 **++
@@ -23,6 +23,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		24-OCT-2026	RRL	X01-20 : a circuit put back is put back with the data of its packets.
+**		25-OCT-2026	RRL	X01-21ECO1 : our ACK carries FLAG_EXT and LAST_ACCEPTED.
 **
 **--
 */
@@ -301,13 +302,13 @@ unsigned	l_status = 1 + NISCA$K_PPD_DATA + NISCA$K_SCS_BODY + NISCA$K_SCS_STATUS
 		&& (l_tr[NISCA$K_TR_FLAG] == a_flags) && (l_tr[NISCA$K_TR_PAD] == 0x13) && (l_tr[NISCA$K_TR_PAD_DLEN] == 0x12)
 		&& (nisca$get16(l_tr + NISCA$K_TR_SEQ) == a_seq) && (nisca$get16(l_tr + NISCA$K_TR_ACK) == a_ack)
 		&& (nisca$get32(l_tr + NISCA$K_TR_MSG_SEQ) == a_seq) && (nisca$get32(l_tr + NISCA$K_TR_ACK_SEQ) == a_ack)
-		&& !nisca$get32(l_tr + NISCA$K_TR_LAST_ACC) && !nisca$get16(l_tr + NISCA$K_TR_FLAG_EXT)
+		&& (nisca$get32(l_tr + NISCA$K_TR_LAST_ACC) == a_ack) && (nisca$get16(l_tr + NISCA$K_TR_FLAG_EXT) == NISCA$M_TR_FEXT_LAST_ACC)
 		&& (nisca$get16(l_tr + NISCA$K_TR_RMT_CHSEQ) == 1)
 		&& !memcmp(l_f + T$K_PAY, s_conrsp_alpha2 + T$K_PAY15, l_status)
 		&& (nisca$get16(l_f + T$K_PAY + l_status) == NISCA$K_SCS_STNOMAT)
 		&& !memcmp(l_f + T$K_PAY + l_status + 2, "VMS$", 4);
 
-	snprintf(l_what, sizeof(l_what), "%s: CON_RSP/STNOMAT, TR flags %02X seq %u ack %u", a_what, a_flags, a_seq, a_ack);
+	snprintf(l_what, sizeof(l_what), "%s: CON_RSP/STNOMAT, TR flags %02X seq %u ack %u = LAST_ACC", a_what, a_flags, a_seq, a_ack);
 
 	return	$CHECK(l_ok, l_what);
 }
@@ -386,7 +387,7 @@ unsigned	l_n;
 	s_ntx = 0;
 	mh$cc_input(l_port, s_lbreq, sizeof(s_lbreq));
 	$CHECK(s_ntx == 1, "CON_REQ: one frame out");
-	s_t$conrsp(0, 0x1B, 1, 1, "first answer");
+	s_t$conrsp(0, 0x5B, 1, 1, "first answer");
 	$CHECK((l_vc->hsr == 1) && (l_vc->nxmt == 1) && !l_vc->sack, "HSR 1, one packet unacknowledged, the ACK went with it");
 
 	/*
@@ -395,7 +396,7 @@ unsigned	l_n;
 	s_t$ticks(l_port, MH$K_TR_RTO - 1);
 	$CHECK(s_ntx == 1, "nothing again before 500 ms");
 	s_t$ticks(l_port, 1);
-	s_t$conrsp(1, 0x3B, 1, 1, "retransmission");
+	s_t$conrsp(1, 0x7B, 1, 1, "retransmission");
 	$CHECK(l_port->tr_rexmt == 1, "one retransmission counted");
 
 	/*
@@ -403,8 +404,9 @@ unsigned	l_n;
 	**  at once, no second answer
 	*/
 	mh$cc_input(l_port, s_lbreq, sizeof(s_lbreq));
-	$CHECK((s_ntx == 3) && (nisca$get16(s_tx[2] + NISCA$K_SZ_ETH) == NISCA$K_SZ_DX + NISCA$K_TR_LEN_V15) && (s_tx[2][T$K_TR + NISCA$K_TR_FLAG] == NISCA$M_TR_ACK)
-		&& (nisca$get16(s_tx[2] + T$K_TR + NISCA$K_TR_ACK) == 1) && (l_port->tr_dup == 1), "duplicate: a bare ACK 1, no answer");
+	$CHECK((s_ntx == 3) && (nisca$get16(s_tx[2] + NISCA$K_SZ_ETH) == NISCA$K_SZ_DX + NISCA$K_TR_LEN_V15) && (s_tx[2][T$K_TR + NISCA$K_TR_FLAG] == (NISCA$M_TR_ACK | NISCA$M_TR_FLAG_EXT))
+		&& (nisca$get16(s_tx[2] + T$K_TR + NISCA$K_TR_ACK) == 1) && (nisca$get32(s_tx[2] + T$K_TR + NISCA$K_TR_LAST_ACC) == 1)
+		&& (l_port->tr_dup == 1), "duplicate: a bare ACK 1 (flags 48, as PEDRIVER's), LAST_ACC 1, no answer");
 
 	/*
 	**  ALPHA1 acknowledges our SEQ 1 - a bare ACK of V1.5
@@ -421,8 +423,8 @@ unsigned	l_n;
 	s_ntx = 0;
 	l_vc->sack = 1;
 	mh$tr_flush(l_port);
-	$CHECK((s_ntx == 1) && (s_tx[0][T$K_TR + NISCA$K_TR_FLAG] == NISCA$M_TR_ACK) && (nisca$get16(s_tx[0] + T$K_TR + NISCA$K_TR_ACK) == 1)
-		&& !l_vc->sack, "the ACK owed: a bare ACK 1 at once");
+	$CHECK((s_ntx == 1) && (s_tx[0][T$K_TR + NISCA$K_TR_FLAG] == (NISCA$M_TR_ACK | NISCA$M_TR_FLAG_EXT))
+		&& (nisca$get16(s_tx[0] + T$K_TR + NISCA$K_TR_ACK) == 1) && !l_vc->sack, "the ACK owed: a bare ACK 1 at once");
 	mh$tr_flush(l_port);
 	$CHECK(s_ntx == 1, "... and not twice");
 
@@ -451,7 +453,8 @@ unsigned	l_n;
 	$CHECK(!s_ntx && (l_vc->sack == 1) && (l_vc->nowed == 1), "HOLD: a packet without RSVP is owed, the drain sends nothing");
 
 	s_t$ticks(l_port, 1);
-	$CHECK((s_ntx == 1) && (s_tx[0][T$K_TR + NISCA$K_TR_FLAG] == NISCA$M_TR_ACK) && (nisca$get16(s_tx[0] + T$K_TR + NISCA$K_TR_ACK) == 1)
+	$CHECK((s_ntx == 1) && (s_tx[0][T$K_TR + NISCA$K_TR_FLAG] == (NISCA$M_TR_ACK | NISCA$M_TR_FLAG_EXT))
+		&& (nisca$get16(s_tx[0] + T$K_TR + NISCA$K_TR_ACK) == 1)
 		&& !l_vc->sack && !l_vc->nowed && (l_port->tr_ackbare[MH$K_ACKW_TICK] == 1), "... the tick sends it: a bare ACK 1");
 
 	s_ntx = 0;
@@ -502,8 +505,8 @@ unsigned	l_n;
 	s_t$frame(s_lbreq, sizeof(s_lbreq), 0x4B, 2, 1, 1, l_f);
 	mh$cc_input(l_port, l_f, sizeof(s_lbreq));
 	$CHECK((s_ntx == 2) && (l_vc->hsr == 3), "SEQ 2: SEQ 2 and 3 delivered, HSR 3");
-	s_t$conrsp(0, 0x1B, 2, 2, "answer to SEQ 2, the queue empty behind it");
-	s_t$conrsp(1, 0x1B, 3, 3, "answer to SEQ 3, the last of the burst");
+	s_t$conrsp(0, 0x5B, 2, 2, "answer to SEQ 2, the queue empty behind it");
+	s_t$conrsp(1, 0x5B, 3, 3, "answer to SEQ 3, the last of the burst");
 
 	/*
 	**  The numbers are longwords: across 65535 both ways, the words of the
@@ -529,7 +532,7 @@ unsigned	l_n;
 	s_ntx = 0;
 	s_t$frame(s_lbreq, sizeof(s_lbreq), 0x4B, 0xFFFF, 0xFFFE, 1, l_f);
 	mh$cc_input(l_port, l_f, sizeof(s_lbreq));
-	s_t$conrsp(0, 0x1B, 0xFFFF, 0xFFFF, "SEQ 65535: answered with SEQ 65535");
+	s_t$conrsp(0, 0x5B, 0xFFFF, 0xFFFF, "SEQ 65535: answered with SEQ 65535");
 
 	s_ntx = 0;
 	s_t$frame(s_lbreq, sizeof(s_lbreq), 0x4B, 0, 0xFFFF, 1, l_f);
