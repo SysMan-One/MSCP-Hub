@@ -3,9 +3,9 @@
 ## User's Guide
 
     Order Number:       MSCPHUB-UG-0119
-    Software Version:   MSCPHUB Version X01-21
+    Software Version:   MSCPHUB Version X01-22
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-20.
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-21.
     Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
@@ -60,7 +60,7 @@ This manual contains the following chapters and appendixes:
 | Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do, the small computers it runs on |
 | Chapter 2 | Installing the server |
 | Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
-| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd, the system disk of a satellite |
+| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd, the system disk of a satellite and loading the satellite by MOP |
 | Chapter 5 | Contains the command dictionary: the `mscphub` and `mhmon` commands and all their qualifiers |
 | Chapter 6 | Describes the format of a message and lists every message with what to do about it |
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
@@ -176,8 +176,8 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 
 * It is not a member of the VMScluster and has no votes.
 * It serves disks only, no tapes.
-* It does not load a diskless satellite: an OpenVMS node of the cluster does. It can serve the
-  system disk of the satellite (see 4.12).
+* It loads a diskless Alpha satellite by MOP (see 4.13), but not an Integrity one: that is loaded by
+  an OpenVMS node. It can serve the system disk of either (see 4.12).
 * It cannot yet be a member disk of a shadow set.
 * It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
@@ -185,7 +185,7 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
   adapters on the LAN of the server uses the first one that opens a channel (see C.9).
 
 MSCPHUB is verified with OpenVMS Alpha Version 8.3, also as the server of the system disk of a
-satellite (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
+satellite and as its MOP server (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
 work.
 
 ## 1.6 Small Computers
@@ -224,8 +224,8 @@ MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-21.tar.gz
-# cd MSCPHUB-X01-21
+# tar xzf MSCPHUB-X01-22.tar.gz
+# cd MSCPHUB-X01-22
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -728,9 +728,9 @@ says why.
 ## 4.12 The System Disk of a Satellite
 
 A satellite is a node of the VMScluster without a disk of its own. It loads OpenVMS over the LAN and
-runs from a system disk that another node serves. MSCPHUB can serve that disk. Loading the
-satellite stays with an OpenVMS node of the cluster, its boot server: on an Alpha, the boot server
-sends the loader by MOP.
+runs from a system disk that another node serves. MSCPHUB can serve that disk. The satellite is
+loaded by its boot server: on an Alpha, the boot server sends the loader by MOP. The boot server is
+an OpenVMS node of the cluster, as this section shows, or MSCPHUB itself (Section 4.13).
 
 This is how a satellite boots from a disk of the server:
 
@@ -800,7 +800,8 @@ $ MCR LANCP SET DEVICE EWA0/MOPDLL=(ENABLE,KNOWNCLIENTSONLY,SIZE=1482)
 $ MCR LANCP SET NODE SAT1/ADDRESS=08-00-2B-E5-43-01/ROOT=$44$DKA100:<SYS10.>/BOOT_TYPE=ALPHA_SATELLITE
 ```
 
-   `SET` changes what runs now; `DEFINE`, with the same qualifiers, keeps it over a reboot.
+   `SET` changes what runs now; `DEFINE`, with the same qualifiers, keeps it over a reboot. To have
+   the server load the satellite instead, see Section 4.13.
 6. Boot the satellite from its LAN adapter:
 
 ```
@@ -817,6 +818,52 @@ $ MCR LANCP SET NODE SAT1/ADDRESS=08-00-2B-E5-43-01/ROOT=$44$DKA100:<SYS10.>/BOO
 > * The system disk must be writable. The server does not serve a read-only unit to a satellite;
 >   `SOLICIT` says so.
 > * A served disk cannot be the quorum disk.
+
+## 4.13 Loading a Satellite by MOP
+
+The server can load an Alpha satellite itself: then no OpenVMS node needs LANCP for it. An OpenVMS
+node with votes is still needed for quorum (see the caution of 4.12).
+
+1. Prepare the system disk and the root of the satellite as Section 4.12 tells, steps 1 to 4.
+2. Name the satellite in the parameter file of the server: the LAN address of the adapter it boots
+   from, the unit of its system disk and its root.
+
+```
+/ALLOCLASS=44
+/UNIT0=DKA100,/srv/mscphub/satsys.img
+/SATELLITE0=08-00-2B-E5-43-01,DKA100,SYS10
+```
+
+3. See that no OpenVMS node loads the satellite too. On its old boot server:
+
+```
+$ MCR LANCP CLEAR NODE SAT1
+$ MCR LANCP PURGE NODE SAT1
+```
+
+   When two MOP servers offer to load a satellite, its console takes the one that answers first.
+4. Restart the server. Its log says `SATCFG` for the satellite.
+5. Boot the satellite from its LAN adapter: `>>> boot ewa0`.
+
+The log of the server then shows `MOPVOL` when the console asks who will load it, `MOPLOAD` a
+fraction of a second later, and then `SOLICIT` and the rest of Section 4.12.
+
+The server reads the files of the satellite from its system disk at every boot: the primary
+bootstrap `[SYS10.SYSCOMMON.SYSEXE]APB.EXE` and the parameter file
+`[SYS10.SYSEXE]ALPHAVMSSYS.PAR`. There is no copy to keep up to date: after a patch the satellite
+gets the new bootstrap. From the parameter file the server takes `SCSNODE`, `SCSSYSTEMID`,
+`NISCS_PORT_SERV` and `NISCS_CONV_BOOT`; `VAXCLUSTER` must not be 0. The satellite is given the
+cluster group and password of the server (/GROUP, /AUTHORIZE) and the name of its system disk as the
+server serves it, `$44$DKA100`.
+
+**Note**
+
+> * The disk must be ODS-2 or ODS-5.
+> * Only Alpha satellites are loaded. An Integrity satellite boots by PXE (BOOTP and TFTP) from an
+>   OpenVMS node.
+> * A console that asks for a file by its name (`boot ewa0 -file ...`) is not answered.
+> * The console of an AlphaServer asks in MOP Version 4 (IEEE 802.3 with SNAP). The server answers
+>   in the version the console asks in, Version 3 too.
 
 ---
 
@@ -946,6 +993,18 @@ severity F.
 
     The server only listens and reports the nodes it sees. It opens no channel and sends nothing at
     all. Safe on any LAN, for example to look at a production cluster.
+
+  **/SATELLITE0=***address*,*unit*,*root*[,`SIZE=`*octets*] ... **/SATELLITE7=**...
+
+    Specifies a diskless Alpha satellite the server loads by MOP (Section 4.13). *address* is the
+    LAN address of the adapter the satellite boots from, `08-00-2B-E5-43-01`. *unit* is the unit of
+    its system disk, one of /UNIT*n*, writable. *root* is its root on that disk, `SYS10`; `<SYS10.>`
+    and `[SYS10.]`, as LANCP has it, are taken too.
+
+    `SIZE=`*octets* - the octets of the image in a MOP message, 246 to 1482. The default is 1482.
+
+    The server reads `[`*root*`.SYSCOMMON.SYSEXE]APB.EXE` and `[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` from
+    the disk at every boot. Only the adapters of /SATELLITE*n* are answered.
 
   **/SYNC=**{`DSYNC` | `GROUP` | `NONE`}
 
@@ -1392,6 +1451,47 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* None.
 
+**MOPFAIL**, warning
+
+    satellite *address* (*name*) is not loaded: *reason*
+
+    *Explanation:* The server cannot load the satellite by MOP, or a load has stopped. The *reason*
+    says why: a file of the root is not on the disk, the disk is not ODS-2 or ODS-5, `VAXCLUSTER`
+    is 0 in the parameter file, the console stopped answering, or it asked for a message out of
+    order. A failure before the load starts is not answered at all: the console asks again, and
+    another MOP server may load it. The same failure is told once a minute.
+
+    *User Action:* Check the root: the files are `[`*root*`.SYSCOMMON.SYSEXE]APB.EXE` and
+    `[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` of the unit of /SATELLITE*n* (Section 4.13).
+
+**MOPLOAD**, information
+
+    satellite *address* (*name*) is loaded: *n* octets and its parameters in *n* messages, *n* sent again, in *n* ms
+
+    *Explanation:* The console of the satellite has its primary bootstrap and its parameters, and
+    starts it. `SOLICIT` follows.
+
+    *User Action:* None.
+
+**MOPSTATS**, information
+
+    satellite *address* (*name*): *state*, loaded *n* times, *n* failures, *n* messages sent, *n* sent again
+
+    *Explanation:* The counters of a satellite of /SATELLITE*n*, on SIGUSR1.
+
+    *User Action:* None.
+
+**MOPVOL**, information
+
+    satellite *address* (*name*) asks for its system by MOP *version*: volunteered, *file*, *n* octets
+
+    *Explanation:* The console of the satellite asks who will load it. The server has read the
+    bootstrap and the parameters of the satellite from its disk and offers to load it. *version* is
+    V3 or V4.
+
+    *User Action:* None. When another MOP server also offers, the console takes the first that
+    answers.
+
 **MSCPERR**, error
 
     end message of *operation* to *connection* of *node* (*systemid*) held back: *reason*
@@ -1500,6 +1600,14 @@ puts in; "(s)" stands for a plural ending.
     recording every *n* second(s) to *file*
 
     *Explanation:* MHMON has begun a file of /RECORD.
+
+    *User Action:* None.
+
+**SATCFG**, information
+
+    satellite *address* is loaded by MOP from unit *disk*, root *root*, *n* octets a message
+
+    *Explanation:* A satellite of /SATELLITE*n*: the server loads it by MOP from that disk and root.
 
     *User Action:* None.
 
@@ -1766,6 +1874,15 @@ happens after the loader.
   `PPD` in the log.
 * The satellite stops when it joins the cluster: the cluster has no quorum (see the caution of 4.12).
 
+When the server loads the satellite (Section 4.13):
+
+* No `MOPVOL` when the console boots: the address of /SATELLITE*n* is not the one of the adapter the
+  console boots from, or the satellite is not on the LAN of the server. `tcpdump -i eth1 ether host
+  08-00-2B-E5-43-01` shows what the console sends.
+* `MOPFAIL`: its reason tells what to mend in the root.
+* `MOPVOL`, but no `MOPLOAD`: another MOP server, the LANCP of an OpenVMS node, answered first and
+  loads the satellite. Clear the node there (Section 4.13, step 3).
+
 ## 7.10 Collecting Information for a Report
 
 ```
@@ -1825,6 +1942,8 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | Modbus/TCP clients at a time | 8 |
 | Copy of the counters for MHMON and Modbus | Every 100 ms |
 | LAN adapters | 1 |
+| Satellites loaded by MOP | 8 (`/SATELLITE0` to `/SATELLITE7`) |
+| Octets of the image in a MOP message | 246 to 1482 |
 
 ---
 
@@ -2061,6 +2180,19 @@ MHUB3, the server of its own system disk, the disk traffic stayed on the DE500 a
 keeps one channel to a node, here the one of the DE500, by which the loader came, and drops the
 packets of the circuit that come by the other adapter. OpenVMS then marks that channel lossy and
 does not use it.
+
+With Version X01-22 MHUB3 loaded SAT1 by MOP itself (Section 4.13), and ALPHA1 no longer did: its
+MOP service was disabled, the disk dismounted. First, for reference, ALPHA1 loaded SAT1 once more by
+LANCP, and both loads were recorded on the LAN.
+
+| Test | What happened |
+|---|---|
+| The load of ALPHA1 | 424 messages of 1482 octets, then the parameters of the satellite and the transfer address, in 0.44 s |
+| The load of MHUB3 | The same 424 messages, the same octets of the bootstrap; the parameters the same item by item but for the name and the system ID of the server; in 0.2 s, nothing sent again |
+| Boot | `MOPVOL`, `MOPLOAD`, `SOLICIT` 4.4 s later, then as before: SAT1 a member 41 s after `boot ewa0` |
+| Boot again | The same: the bootstrap read from the disk anew, loaded in 0.18 s |
+
+The console of the AlphaServer asked in MOP Version 4 only.
 
 ## C.10 Reading These Numbers
 

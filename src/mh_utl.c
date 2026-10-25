@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-21"
-#define	__REV__		"1.21.0"
+#define	__IDENT__	"X01-22"
+#define	__REV__		"1.22.0"
 
 /*
 **++
@@ -38,6 +38,7 @@
 **		22-OCT-2026	RRL	X01-17 : the messages of the statistics and of MHMON.
 **		24-OCT-2026	RRL	X01-20 : JUMBO, RCVBUF.
 **		25-OCT-2026	RRL	X01-21 : SOLICIT.
+**		25-OCT-2026	RRL	X01-22 : SATCFG, MOPVOL, MOPLOAD, MOPFAIL, MOPSTATS.
 **
 **--
 */
@@ -106,6 +107,11 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_MBUSERR,	"MBUSERR, the counters are not served over Modbus/TCP: !AZ failed, errno=!SL (!AZ)"),
 	$MHREC(MH$_JUMBO,	"JUMBO, !AZ has an MTU of !UL!AZ: a packet of a block transfer carries up to !UL octets of data"),
 	$MHREC(MH$_SOLICIT,	"SOLICIT, satellite !AZ (!UL) asks for its system disk !AF - !AZ"),
+	$MHREC(MH$_SATCFG,	"SATCFG, satellite !AZ is loaded by MOP from unit !AZ, root !AZ, !UL octets a message"),
+	$MHREC(MH$_MOPVOL,	"MOPVOL, satellite !AZ (!AZ) asks for its system by MOP !AZ: volunteered, !AZ:[!AZ.SYSCOMMON.SYSEXE]APB.EXE, !UL octets"),
+	$MHREC(MH$_MOPLOAD,	"MOPLOAD, satellite !AZ (!AZ) is loaded: !UL octets and its parameters in !UL message!%S, !UL sent again, in !UL ms"),
+	$MHREC(MH$_MOPFAIL,	"MOPFAIL, satellite !AZ (!AZ) is not loaded: !AZ"),
+	$MHREC(MH$_MOPSTATS,	"MOPSTATS, satellite !AZ (!AZ): !AZ, loaded !UL time!%S, !UL failure!%S, !UQ message!%S sent, !UQ sent again"),
 	$MHREC(MH$_RCVBUF,	"RCVBUF, the socket of !AZ holds !UL octets of frames, not !UL: a burst of jumbo frames can be lost; raise net.core.rmem_max to !UL"),
 	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),
 	$MHREC(MH$_UPTIME,	"UPTIME, MSCPHUB !AZ, node !AZ, up !UL day!%S !2ZL:!2ZL:!2ZL, OpenVMS time of !AZ"),

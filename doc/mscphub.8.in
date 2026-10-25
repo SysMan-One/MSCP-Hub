@@ -22,6 +22,7 @@
 .\"		22-OCT-2026	RRL	X01-19ECO4 : AUTHOR without the AKA; the date of .TH.
 .\"		24-OCT-2026	RRL	X01-20 : jumbo frames; their receive buffer.
 .\"		25-OCT-2026	RRL	X01-21 : the system disk of a satellite.
+.\"		25-OCT-2026	RRL	X01-22 : the MOP server of a satellite, /SATELLITEn.
 .\"
 .\"---
 .TH MSCPHUB 8 "25 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
@@ -128,6 +129,21 @@ names what the node is told the disk is \- RZ29 by default, RRD42 with
 takes a file as a disk of larger sectors, for tests only.  An ISO image of
 the OpenVMS CD is served as it is, with
 .BR RO .
+.TP
+\fB/SATELLITE0\fR ... \fB/SATELLITE7=\fIaddress\fB,\fIunit\fB,\fIroot\fR[\fB,SIZE=\fIoctets\fR]
+A diskless Alpha satellite the server loads by MOP when its console boots
+from the LAN (BOOT EWA0): the LAN
+.I address
+of its adapter, the
+.I unit
+of its system disk (writable, ODS\-2 or ODS\-5) and its
+.I root
+there, SYS10.  The primary bootstrap [SYS10.SYSCOMMON.SYSEXE]APB.EXE and
+the parameter file [SYS10.SYSEXE]ALPHAVMSSYS.PAR are read from the disk
+itself at every boot; the satellite is given the group and the password of
+the server.
+.B SIZE=
+is the octets of the image a MOP message carries, 246 to 1482; default 1482.
 .TP
 .BR /SYNC= DSYNC | GROUP | NONE
 When a WRITE is on the disk.

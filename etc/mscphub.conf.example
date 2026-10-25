@@ -48,6 +48,11 @@
 ! /UNIT1=DKA200,/dev/sdb
 ! /UNIT2=DKA300,/srv/mscphub/AXPVMS083.iso,RO
 !
+! A diskless Alpha satellite the server loads by MOP: the address of the
+! adapter it boots from, the unit of its system disk, its root there.
+!
+! /SATELLITE0=08-00-2B-E5-43-01,DKA100,SYS10
+!
 ! When a WRITE is on the disk: DSYNC (the default, every WRITE), GROUP
 ! (one fdatasync for the writes that come together).
 !

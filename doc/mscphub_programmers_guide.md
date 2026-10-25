@@ -3,9 +3,9 @@
 ## Programmer's Guide
 
     Order Number:       MSCPHUB-PG-0119
-    Software Version:   MSCPHUB Version X01-21
+    Software Version:   MSCPHUB Version X01-22
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-20.
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-21.
     Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
@@ -209,6 +209,8 @@ Bottom up:
 | `mh_blk.c` | Block transfers | SEND_DATA for a READ, REQUEST_DATA for a WRITE |
 | `mh_mscp.c` | MSCP server | The units, the hosts, the commands and their order |
 | `mh_bk.c` | Backend | The disk I/O of the units, by io_uring |
+| `mh_ods.c` | Files-11 | A reader of the volume of a unit, ODS-2 and ODS-5, read only: a file by its path |
+| `mh_mop.c` | MOP | The MOP server of the Alpha satellites: their bootstrap and parameters, from their disk |
 | `mh_utl.c` | Services | The message catalogue, the OpenVMS time, conversions |
 | `mh_hlp.c` | Help | `/HELP`, out of the help library |
 | `mh_stat.c` | Statistics | The block of state and counters in shared memory, and its reader |
@@ -229,6 +231,7 @@ server and MHMON, in `include/mh_stat.h`.
 | The LAN socket | Frames: drained, each given to `mh$cc_input`; then the acknowledgements owed go (`mh$tr_flush`) |
 | A TIMERFD of 20 ms | The tick of the protocol: `mh$cc_tick` (HELLO, timers of the channels and circuits), `mh$bk_tick` (stuck requests), `mh$stat_tick` (the queues; the copy every fifth tick) |
 | The EVENTFD of io_uring | Disk completions: `mh$bk_reap` |
+| The two MOP sockets, with /SATELLITE*n* | Frames of MOP V3 and V4: each given to `mh$mop_input`; on the tick, `mh$mop_tick` sends again what is unanswered |
 | A SIGNALFD | SIGINT and SIGTERM stop the server; SIGUSR1 writes the state |
 
 A routine of any layer that returns a condition of severity F stops the loop; the server then says
@@ -273,6 +276,10 @@ The socket is `SOCK_RAW` of `AF_PACKET`, bound to the interface and to type 60-0
 header and the length word of the DEC padding are built here; the frame is padded to the Ethernet
 minimum. Frames the server has sent itself come back to such a socket and are dropped and counted.
 `a_port->xmit`, when set, takes a frame in place of the socket: the tests use it.
+
+With /SATELLITE*n* two more sockets are opened (`mh$lan_mop_open`): one of type 60-01 for MOP V3,
+one of 802.2 for MOP V4, whose SNAP 08-00-2B-60-01 `mh_mop.c` checks. Both join the multicast of MOP,
+AB-00-00-01-00-00. `mh$lan_mop_send` takes a frame made whole by `mh_mop.c`.
 
 ## 3.3 mh_cc.c
 
@@ -394,6 +401,39 @@ statistics afresh; a PID that is gone unmaps the block, and MHMON maps it again 
 back. The screens are made with FAO into a buffer and written at once. The T4 file is written row by
 row; its columns are fixed when it is begun, and a node or a disk is found by its name.
 
+## 3.15 mh_ods.c
+
+A reader of the Files-11 volume of a unit, ODS-2 and ODS-5, read only. `mh$ods_open` finds the home
+block (LBN 1, or the first block that names itself), and the header of INDEXF.SYS after the index
+file bitmap; the map of INDEXF.SYS gives the block of any other header. `mh$ods_lookup` walks a path
+from the MFD, directory by directory, the highest version of a name; an alias such as SYSCOMMON of a
+root is followed like any other entry. `mh$ods_read` reads blocks of a file by its map, extension
+headers included. A header is taken only with its checksum right, of structure level 2 or 5, and
+of the FID asked for, sequence number and all.
+
+The volume is read through the descriptor of the unit, which may be O_DIRECT: every read is of
+whole pages into a buffer of the reader. The offsets are 64-bit; `$MIN` of STARLET takes `int` and is
+not used for them. The reader takes no lock: what it reads is what a node does not write while a
+satellite boots.
+
+## 3.16 mh_mop.c
+
+The MOP server of the satellites of /SATELLITE*n*. A satellite has a state of its own
+(`MH$MOPSAT`): only the adapters named are answered, each load goes its own way. A multicast REQUEST
+PROGRAM makes the load ready - the first image section of `[`*root*`.SYSCOMMON.SYSEXE]APB.EXE`, read by
+`mh_ods.c` past the header of HDRBLKCNT blocks, and the parameters of the satellite - and only then
+is ASSISTANCE VOLUNTEER sent: a server that cannot load does not offer to. A REQUEST PROGRAM to the
+server starts the load with MEMORY LOAD 0. A REQUEST MEMORY LOAD of the number sent asks for it again,
+of the next one moves on; another ends the load.
+
+After the image comes a MEMORY LOAD of the parameters at the address the image ends at: the bootstrap
+looks for them right after itself. They are items of a word of code and a word of length: the root,
+the name of the server, the name of the service of the unit and its UNIT_ID, the system ID of the
+server, then SCSNODE, SCSSYSTEMID, NISCS_PORT_SERV and NISCS_CONV_BOOT of
+`[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` in the order they are in that file, then the group and the password.
+Then the PARAMETER LOAD WITH TRANSFER ADDRESS. The load of an OpenVMS boot server, recorded on the LAN,
+is the same octet for octet but for the name and the system ID of the server.
+
 ---
 
 # Chapter 4
@@ -417,6 +457,8 @@ All are declared in `include/mh_def.h`.
 | `MH$LAT` | The time counters of one operation of a unit |
 | `MH$STAT` | The statistics block: who the server is, its counters, its nodes and units (`mh_stat.h`) |
 | `MH$STNODE`, `MH$STUNIT` | A node and a unit in the block |
+| `MH$MOPSAT` | A satellite of /SATELLITE*n*: its adapter, unit and root, and the state of its load |
+| `MH$ODS`, `MH$ODSFILE`, `MH$ODSEXT` | A Files-11 volume being read, a file of it, an extent of the file |
 
 The ownership is simple, because there is one thread: a structure belongs to the layer that
 declares its state, and a lower layer never frees what an upper one holds. A command in progress
@@ -738,6 +780,8 @@ not in the kit.
 | `scs` | SCS and the directory; the MSCP server: STCON, GET UNIT STATUS, ONLINE, AVAILABLE, the checks of a command, credits |
 | `blk` | READ, WRITE, COMPARE and ERASE over the block transfers; the order of the commands; ABORT; a connection that goes while the disk has a command |
 | `bk` | The backend: io_uring, read-modify-write, ranges of sectors, the cache of written sectors, ERASE, group commit, direct I/O |
+| `ods` | The reader of Files-11 on a small volume made by the test (`tests/t_vol.h`): the home block, INDEXF.SYS, an alias, versions, extents and extension headers, a wrong sequence number or checksum |
+| `mop` | The MOP server: a satellite loaded from the volume of `ods`, V4 and V3, the parameters item by item, the timers, the requests not answered |
 | `stat` | The statistics block: made, copied every 100 ms, never a torn copy under a writer in another thread, another layout refused, the queues; the answers of Modbus |
 | `t4` | MHMON records a published block: the header of T4, the same fields in every row, the rate of a unit |
 | `init` | The System V scripts: no start without the parameter file, the collector of T4 started, its state, stopped with its file closed |
@@ -768,5 +812,6 @@ not in the kit.
 | Jumbo frames up to an MTU of 9000 | `MH$K_LAN_MAXMTU`, `mh_def.h` |
 | No member disk of a shadow set (no forced error) | `mh_mscp.c` |
 | No tapes | not implemented |
-| No MOP or BOOTP: an OpenVMS node loads a satellite | not implemented |
+| 8 satellites loaded by MOP | `/SATELLITE0` to `/SATELLITE7` in `s_opts`, `mscphub.c` |
+| MOP for Alpha satellites only; no BOOTP or TFTP: an OpenVMS node loads an Integrity satellite | not implemented |
 | No cluster over IP | not implemented |

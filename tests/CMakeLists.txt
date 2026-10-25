@@ -18,6 +18,7 @@
 #		22-OCT-2026	RRL	X01-17 : the statistics block, Modbus, MHMON and T4.
 #		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
 #		25-OCT-2026	RRL	X01-21 : the system disk of a satellite, T_BOOT.
+#		25-OCT-2026	RRL	X01-22 : the reader of Files-11, T_ODS; the MOP server, T_MOP.
 #
 #---
 
@@ -44,6 +45,18 @@ add_executable(t_boot t_boot.c)
 target_link_libraries(t_boot PRIVATE mhcore)
 
 add_test(NAME boot COMMAND t_boot)
+
+add_executable(t_ods t_ods.c)
+
+target_link_libraries(t_ods PRIVATE mhcore)
+
+add_test(NAME ods COMMAND t_ods)
+
+add_executable(t_mop t_mop.c)
+
+target_link_libraries(t_mop PRIVATE mhcore)
+
+add_test(NAME mop COMMAND t_mop)
 
 add_executable(t_blk t_blk.c)
 

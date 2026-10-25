@@ -209,6 +209,45 @@ The server only listens and reports the nodes it sees. It opens no
 channel and sends nothing at all. Safe on any LAN, for example to
 look at a production cluster.
 
+## /SATELLITE0 ... /SATELLITE7 -- load a satellite by MOP
+
+```
+/SATELLITE0=address,unit,root[,SIZE=octets]
+```
+
+Makes the server the MOP server of a diskless Alpha satellite: when
+the console of the satellite boots from the LAN (BOOT EWA0), the
+server loads it. The address is the LAN address of the adapter the
+satellite boots from, the unit is the one of its system disk, the
+root is its root on that disk:
+
+```
+/UNIT0=DKA100,/srv/vms/satsys.img
+/SATELLITE0=08-00-2B-E5-43-01,DKA100,SYS10
+```
+
+The server reads the files of the satellite from the disk itself, at
+every boot: the primary bootstrap
+[SYS10.SYSCOMMON.SYSEXE]APB.EXE and the parameter file
+[SYS10.SYSEXE]ALPHAVMSSYS.PAR. They are always the ones on the disk,
+after any patch. The disk must be ODS-2 or ODS-5 and served
+writable; the root is made by CLUSTER_CONFIG_LAN on an OpenVMS node,
+as for any satellite.
+
+The satellite is given the same cluster group and password as the
+server (/GROUP, /AUTHORIZE), and the name of its system disk as the
+server serves it ($42$DKA100). Only the adapters of /SATELLITEn are
+answered.
+
+The options:
+
+- SIZE=octets -- the octets of the image in a MOP message, 246 to
+  1482. The default is 1482.
+
+The root may be given as LANCP gives it: <SYS10.> or [SYS10.]. A
+satellite needs an OpenVMS node with votes to join a cluster: the
+server has none.
+
 ## /SYNC -- when a WRITE is on disk
 
 ```
@@ -888,6 +927,69 @@ Explanation: The server answers Modbus/TCP requests for its counters
 
 User Action: None.
 
+### MOPFAIL
+
+```
+satellite 'address' ('name') is not loaded: 'reason'
+```
+
+Severity: warning.
+
+Explanation: The MOP server cannot load the satellite, or a load has
+stopped. The reason says why: a file of the root is not on the disk,
+the disk is not ODS-2 or ODS-5, VAXCLUSTER is 0 in the parameter file
+(the satellite is no member of a cluster), the console stopped
+answering, or it asked for a message out of order. A failure before
+the load starts gets no answer at all: the console asks again, and
+another MOP server may load it. The same failure is told once a
+minute.
+
+User Action: Check the root: the files are
+[root.SYSCOMMON.SYSEXE]APB.EXE and [root.SYSEXE]ALPHAVMSSYS.PAR of
+the unit of /SATELLITEn. Make the root with CLUSTER_CONFIG_LAN.
+
+### MOPLOAD
+
+```
+satellite 'address' ('name') is loaded: 'n' octets and its parameters in 'n' messages, 'n' sent again, in 'n' ms
+```
+
+Severity: information.
+
+Explanation: The console of the satellite has its primary bootstrap
+and its parameters, and starts it. The bootstrap then asks for its
+system disk: SOLICIT follows.
+
+User Action: None.
+
+### MOPSTATS
+
+```
+satellite 'address' ('name'): 'state', loaded 'n' times, 'n' failures, 'n' messages sent, 'n' sent again
+```
+
+Severity: information.
+
+Explanation: The counters of a satellite of /SATELLITEn, on SIGUSR1.
+
+User Action: None.
+
+### MOPVOL
+
+```
+satellite 'address' ('name') asks for its system by MOP 'version': volunteered, 'file', 'n' octets
+```
+
+Severity: information.
+
+Explanation: The console of the satellite asks who will load it. The
+server has read the bootstrap and the parameters of the satellite from
+its disk and offers to load it. The version is V3 or V4: the server
+answers in the one the console asks in.
+
+User Action: None. When another MOP server also offers, the console
+takes the first that answers.
+
 ### MSCPERR
 
 ```
@@ -1053,6 +1155,19 @@ recording every 'n' second(s) to 'file'
 Severity: information.
 
 Explanation: MHMON has begun a file of /RECORD.
+
+User Action: None.
+
+### SATCFG
+
+```
+satellite 'address' is loaded by MOP from unit 'disk', root 'root', 'n' octets a message
+```
+
+Severity: information.
+
+Explanation: A satellite of /SATELLITEn: the server loads it by MOP
+from that disk and root.
 
 User Action: None.
 

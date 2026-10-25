@@ -23,6 +23,7 @@
 #						does not run (MH_INIT).
 #		22-OCT-2026	RRL	X01-19 : the parameter file in /etc/mscphub (MH_CONFDIR), not
 #						/etc/opt/mscphub.
+#		25-OCT-2026	RRL	X01-22 : MHODS, the reader of Files-11, and MHMOP, the MOP server.
 #
 #---
 
@@ -147,6 +148,8 @@ add_library(mhcore STATIC
 	src/mh_blk.c
 	src/mh_bk.c
 	src/mh_mscp.c
+	src/mh_ods.c
+	src/mh_mop.c
 	src/mh_stat.c
 	src/mh_mbus.c
 	src/mh_hlp.c)

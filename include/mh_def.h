@@ -64,6 +64,9 @@
 **						the receive buffer of the socket for them, RCVBUF.
 **		25-OCT-2026	RRL	X01-21 : the system disk of a satellite: SOLICIT_SRV, SOLICIT_DLY,
 **						the START of the server on the path of a boot driver; SOLICIT.
+**		25-OCT-2026	RRL	X01-22 : the MOP server of a satellite (MHMOP) and the reader of
+**						its system disk (MHODS); SATCFG, MOPVOL, MOPLOAD, MOPFAIL,
+**						MOPSTATS.
 **
 **--
 */
@@ -73,11 +76,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-21"
+#define	__IDENT__	"X01-22"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.21.0"
+#define	__REV__		"1.22.0"
 #endif
 
 #ifndef	__FAC__
@@ -153,6 +156,11 @@ enum	{
 	MH$K_MSG_JUMBO,				/* The LAN takes frames longer than 1500	*/
 	MH$K_MSG_RCVBUF,			/* The socket holds fewer jumbo frames than asked	*/
 	MH$K_MSG_SOLICIT,			/* A booting satellite asks for its system disk	*/
+	MH$K_MSG_SATCFG,			/* A satellite is loaded by our MOP server	*/
+	MH$K_MSG_MOPVOL,			/* ... asks for its system: we volunteer	*/
+	MH$K_MSG_MOPLOAD,			/* ... is loaded				*/
+	MH$K_MSG_MOPFAIL,			/* ... is not					*/
+	MH$K_MSG_MOPSTATS,			/* The counters of a satellite, on SIGUSR1	*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -206,6 +214,11 @@ enum	{
 #define	MH$_JUMBO		$MHSTS(MH$K_MSG_JUMBO,		STS$K_INFO)
 #define	MH$_RCVBUF		$MHSTS(MH$K_MSG_RCVBUF,		STS$K_WARN)
 #define	MH$_SOLICIT		$MHSTS(MH$K_MSG_SOLICIT,	STS$K_INFO)
+#define	MH$_SATCFG		$MHSTS(MH$K_MSG_SATCFG,		STS$K_INFO)
+#define	MH$_MOPVOL		$MHSTS(MH$K_MSG_MOPVOL,		STS$K_INFO)
+#define	MH$_MOPLOAD		$MHSTS(MH$K_MSG_MOPLOAD,	STS$K_INFO)
+#define	MH$_MOPFAIL		$MHSTS(MH$K_MSG_MOPFAIL,	STS$K_WARN)
+#define	MH$_MOPSTATS		$MHSTS(MH$K_MSG_MOPSTATS,	STS$K_INFO)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -276,6 +289,72 @@ enum	{
 **  The MSCP server
 */
 #define	MH$K_MAXUNIT		8		/* /UNIT0 ... /UNIT7				*/
+
+/*
+**  The MOP server of the satellites: the load of the primary bootstrap
+**  of an Alpha (APB.EXE) and of its parameters
+*/
+#define	MH$K_MAXSAT		8		/* /SATELLITE0 ... /SATELLITE7			*/
+#define	MH$K_MOP_ETHERTYPE	0x6001		/* MOP V3, and the PID of the SNAP of V4	*/
+#define	MH$K_MOP_DEFSIZE	1482		/* Octets of an image in a MEMORY LOAD		*/
+#define	MH$K_MOP_MINSIZE	246
+#define	MH$K_MOP_MSGSZ		1536		/* A MOP message at most			*/
+#define	MH$K_MOP_FRAMESZ	(22 + MH$K_MOP_MSGSZ)	/* ... in a frame of V4			*/
+#define	MH$K_MOP_RETRY		(1 * MH$K_TICKS_SEC)	/* The last message again, unanswered	*/
+#define	MH$K_MOP_TMO		(60 * MH$K_TICKS_SEC)	/* A load the console has left is ended	*/
+#define	MH$K_MOP_FRESH		(60 * MH$K_TICKS_SEC)	/* An image read longer ago is read again	*/
+#define	MH$K_MOP_FAILLOG	(60 * MH$K_TICKS_SEC)	/* The same MOPFAIL not more often		*/
+#define	MH$K_MOP_MAXIMG		(16 * 1024 * 1024)	/* The section of an image at most		*/
+
+enum	{
+	MH$K_MOP_V3	= 0,			/* Ethernet, 60-01, the length word		*/
+	MH$K_MOP_V4,				/* IEEE 802.3, SNAP 08-00-2B-60-01		*/
+	MH$K_MOP_NFMT
+	};
+
+enum	{
+	MH$K_MOP_IDLE	= 0,
+	MH$K_MOP_VOLUNTEER,			/* ASSISTANCE VOLUNTEER sent, the image ready	*/
+	MH$K_MOP_IMAGE,				/* MEMORY LOADs of the image			*/
+	MH$K_MOP_PARAM,				/* ... of the parameters, after it		*/
+	MH$K_MOP_XFER,				/* PARAMETER LOAD with TRANSFER ADDRESS		*/
+	MH$K_MOP_NSTATE
+	};
+
+typedef struct mh_mopsat_t {
+	uint8_t		mac [NISCA$K_SZ_MAC];	/* Its adapter: only known ones are answered	*/
+	unsigned	unit;			/* The unit of its system disk			*/
+	char		root [40];		/* SYS10, ASCIZ					*/
+	unsigned	size;			/* Octets of the image in a MEMORY LOAD		*/
+	char		name [NISCA$K_SZ_NODENAME + 3];	/* SCSNODE of its PAR, ASCIZ; the MAC till then	*/
+
+	/*
+	**  The load: the section of APB.EXE, the parameters that follow it, where
+	**  the console is in them; the message last sent, to send again
+	*/
+	int		state;			/* MH$K_MOP_*					*/
+	unsigned	fmt;			/* ... in the format the console asked in	*/
+	uint8_t *	img;
+	uint32_t	imglen;
+	uint8_t		lapl [256];		/* The parameters of a satellite: the LAPL	*/
+	unsigned	lapllen;
+	uint8_t		scsnode [8];		/* ... of its PAR: SCSNODE, blank-padded	*/
+	uint8_t		scsid [2];		/* ... SCSSYSTEMID, the low word		*/
+	uint64_t	ready;			/* Tick the image and the LAPL were made	*/
+	uint8_t		loadnum;		/* Of the message last sent			*/
+	uint32_t	offset;			/* Octets of the image before it		*/
+	unsigned	curlen;			/* ... in it					*/
+	uint8_t		frame [MH$K_MOP_FRAMESZ];
+	unsigned	framelen;
+	uint64_t	due;			/* Tick to send it again, 0 - none		*/
+	uint64_t	heard;			/* Tick of the last message of the console	*/
+	uint64_t	begun;			/* ... of the start of the load			*/
+	uint64_t	faillog;		/* ... of the last MOPFAIL			*/
+	uint32_t	nmsg, nrexmt;		/* Of this load					*/
+
+	uint32_t	loads, fails;
+	uint64_t	tx, rexmt;
+} MH$MOPSAT;
 #define	MH$K_MAXHOST		256		/* Host numbers of the connections		*/
 #define	MH$K_MSCP_CNT_TMO	20		/* Controller timeout, s: the GUS of the client	*/
 #define	MH$K_MSCP_MAXBCNT	0x20000		/* 128 KB, MAXBCNT and DMAXBCNT			*/
@@ -320,6 +399,7 @@ typedef struct mh_cfg_t {
 	ASC		ack;			/* /ACK=FLUSH | HOLD				*/
 	ASC		modbus;			/* /MODBUS: [address:]port, empty - none	*/
 	ASC		unit [MH$K_MAXUNIT];	/* /UNITn=name,path[,RO][,MEDIA=m][,SECTOR=n]	*/
+	ASC		sat [MH$K_MAXSAT];	/* /SATELLITEn=mac,unit,root[,SIZE=n]		*/
 } MH$CFG;
 
 /*
@@ -768,6 +848,46 @@ typedef struct mh_unit_t {
 } MH$UNIT;
 
 /*
+**  The reader of a Files-11 volume (MHODS): an extent of a file, a file -
+**  its map and its end, the volume
+*/
+#define	MH$K_ODS_MAXMAP		128		/* Extents of a file, at most			*/
+#define	MH$K_ODS_BUFSZ		(64 * 1024)	/* A read of the volume at most, whole pages	*/
+#define	MH$K_ODS_NAMESZ		256		/* NAME.TYPE: 236 in ODS-5			*/
+
+typedef struct mh_odsext_t {
+	uint32_t	vbn;			/* The first VBN of it				*/
+	uint32_t	count;			/* Blocks					*/
+	uint64_t	lbn;
+} MH$ODSEXT;
+
+typedef struct mh_odsfile_t {
+	uint32_t	num;			/* FID: the number, the sequence		*/
+	uint16_t	seq;
+	uint32_t	efblk;			/* End of file: its block, its first free octet	*/
+	uint16_t	ffbyte;
+	uint32_t	hiblk;			/* Blocks allocated, as the header says		*/
+	uint32_t	blocks;			/* ... as the map has them			*/
+	uint64_t	size;			/* Octets to the end of file			*/
+	unsigned	nmap;
+	MH$ODSEXT	map [MH$K_ODS_MAXMAP];
+} MH$ODSFILE;
+
+typedef struct mh_ods_t {
+	int		fd;			/* The descriptor of the unit			*/
+	uint64_t	size;			/* ... its size, octets				*/
+	uint8_t *	buf;			/* MH$K_ODS_BUFSZ, page aligned			*/
+	uint8_t		level;			/* Structure level: 2, 5			*/
+	uint16_t	ibmapvbn;
+	uint16_t	ibmapsize;
+	uint32_t	ibmaplbn;
+	uint32_t	maxfiles;
+	char		volname [13];		/* ASCIZ, trailing blanks dropped		*/
+	MH$ODSFILE	indexf;			/* INDEXF.SYS: where the headers are		*/
+	char		why [192];		/* What went wrong, for the message		*/
+} MH$ODS;
+
+/*
 **  The LAN port: one adapter
 */
 typedef struct mh_port_t {
@@ -824,6 +944,14 @@ typedef struct mh_port_t {
 	unsigned	tr_maxwin;		/* The widest the window has been		*/
 
 	/*
+	**  The MOP server: its sockets, V3 and V4, and the satellites
+	*/
+	int		mopsd [MH$K_MOP_NFMT];
+	unsigned	nsat;
+	MH$MOPSAT	sats [MH$K_MAXSAT];
+	uint64_t	mop_rx, mop_other;	/* MOP messages taken; of unknown adapters	*/
+
+	/*
 	**  The tests take the frames here instead of the socket
 	*/
 	int		(*xmit) (struct mh_port_t *a_port, const uint8_t *a_frame, unsigned a_len);
@@ -870,6 +998,17 @@ int	mh$lan_join	(MH$PORT *a_port, const uint8_t *a_mac);
 int	mh$lan_close	(MH$PORT *a_port);
 int	mh$lan_send	(MH$PORT *a_port, const uint8_t *a_dst, const uint8_t *a_data, unsigned a_len);
 int	mh$lan_recv	(MH$PORT *a_port, uint8_t *a_frame, unsigned a_frmsz, unsigned *a_len);
+int	mh$lan_mop_open	(MH$PORT *a_port);
+int	mh$lan_mop_recv	(MH$PORT *a_port, unsigned a_fmt, uint8_t *a_frame, unsigned a_frmsz, unsigned *a_len);
+int	mh$lan_mop_send	(MH$PORT *a_port, unsigned a_fmt, const uint8_t *a_frame, unsigned a_len);
+
+/*
+**  MHMOP.C
+*/
+int	mh$mop_init	(MH$PORT *a_port, const MH$CFG *a_cfg);
+int	mh$mop_input	(MH$PORT *a_port, unsigned a_fmt, const uint8_t *a_frame, unsigned a_len);
+int	mh$mop_tick	(MH$PORT *a_port);
+int	mh$mop_stats	(MH$PORT *a_port);
 
 /*
 **  MHCC.C
@@ -934,6 +1073,14 @@ int	mh$mscp_input	(MH$PORT *a_port, MH$NODE *a_node, MH$CDT *a_cdt, const uint8_
 int	mh$mscp_xferdone (MH$PORT *a_port, MH$HRB *a_hrb, int a_ok);
 int	mh$mscp_iodone	(MH$PORT *a_port, MH$HRB *a_hrb);
 MH$HRB *mh$mscp_hrb	(MH$PORT *a_port, MH$NODE *a_node, uint32_t a_lconid, uint32_t a_tag);
+
+/*
+**  MHODS.C
+*/
+int	mh$ods_open	(MH$ODS *a_ods, int a_fd, uint64_t a_size);
+int	mh$ods_close	(MH$ODS *a_ods);
+int	mh$ods_lookup	(MH$ODS *a_ods, const char *a_path, MH$ODSFILE *a_file);
+int	mh$ods_read	(MH$ODS *a_ods, const MH$ODSFILE *a_file, uint32_t a_vbn, uint32_t a_count, uint8_t *a_buf);
 
 /*
 **  MHBK.C

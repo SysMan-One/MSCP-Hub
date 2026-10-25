@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-21ECO1"
-#define	__REV__		"1.21.1"
+#define	__IDENT__	"X01-22"
+#define	__REV__		"1.22.0"
 
 /*
 **++
@@ -32,7 +32,8 @@
 **
 **		The protocol runs in one thread on EPOLL: the LAN socket, a
 **		20 ms TIMERFD (the TR tick of NISCA), the EVENTFD of the
-**		backend (the io_uring that does the I/O of the units) and a
+**		backend (the io_uring that does the I/O of the units), the two
+**		sockets of MOP when satellites are loaded, and a
 **		SIGNALFD - SIGINT and SIGTERM stop the server, SIGUSR1 logs
 **		how long it has run, the nodes and the counters.
 **
@@ -71,6 +72,8 @@
 **		24-OCT-2026	RRL	X01-20ECO1 : the User's Guide, Appendix C.8: jumbo frames measured.
 **		25-OCT-2026	RRL	X01-21 : the system disk of a diskless satellite (SOLICIT_SRV).
 **		25-OCT-2026	RRL	X01-21ECO1 : LAST_ACCEPTED in the TR header: the delay of the channel.
+**		25-OCT-2026	RRL	X01-22 : the MOP server of a diskless Alpha satellite (/SATELLITEn),
+**						its files read from its system disk.
 **
 **--
 */
@@ -120,6 +123,14 @@ static	const OPTS	s_opts [] = {
 	{ { $ASCINI("unit5") },	&s_cfg.unit[5],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("unit6") },	&s_cfg.unit[6],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("unit7") },	&s_cfg.unit[7],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite0") },	&s_cfg.sat[0],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite1") },	&s_cfg.sat[1],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite2") },	&s_cfg.sat[2],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite3") },	&s_cfg.sat[3],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite4") },	&s_cfg.sat[4],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite5") },	&s_cfg.sat[5],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite6") },	&s_cfg.sat[6],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("satellite7") },	&s_cfg.sat[7],	ASC$K_SZ,	OPTS$K_STR },
 
 	{ { 0, { 0 } }, NULL, 0, 0 }					/* OPTS_NULL, braced for -Wmissing-braces	*/
 	};
@@ -128,7 +139,8 @@ enum	{
 	MH$K_EV_LAN	= 1,
 	MH$K_EV_TIMER,
 	MH$K_EV_SIGNAL,
-	MH$K_EV_BK
+	MH$K_EV_BK,
+	MH$K_EV_MOP				/* ... + MH$K_MOP_V3, MH$K_MOP_V4		*/
 	};
 
 
@@ -293,7 +305,9 @@ unsigned		l_ncon;
 	$MHMSG(MH$_BLKSTATS, s_port.blk_snt, s_port.blk_bytes_out, s_port.blk_cnf, s_port.blk_req, s_port.blk_ret, s_port.blk_bytes_in,
 		s_port.blk_bad);
 
-	return	mh$mscp_stats(&s_port);
+	mh$mscp_stats(&s_port);
+
+	return	mh$mop_stats(&s_port);
 }
 
 
@@ -372,6 +386,17 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 	if ( (mh$bk_fd() >= 0) && epoll_ctl(l_ep, EPOLL_CTL_ADD, mh$bk_fd(), &l_ev) )
 		return	$MHMSG(MH$_SYSERR, "epoll_ctl(BACKEND)", errno, strerror(errno));
 
+	/*
+	**  The MOP server, when satellites are loaded
+	*/
+	for ( unsigned i = 0; s_port.nsat && (i < MH$K_MOP_NFMT); i++ )
+		{
+		l_ev.data.u32 = MH$K_EV_MOP + i;
+
+		if ( epoll_ctl(l_ep, EPOLL_CTL_ADD, s_port.mopsd[i], &l_ev) )
+			return	$MHMSG(MH$_SYSERR, "epoll_ctl(MOP)", errno, strerror(errno));
+		}
+
 	for ( ;; )
 		{
 		if ( 0 > (l_n = epoll_wait(l_ep, l_evs, (int) $ARRSZ(l_evs), -1)) )
@@ -425,6 +450,8 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 					for ( uint64_t j = 0; j < l_expired; j++ )
 						mh$cc_tick(&s_port);
 
+					mh$mop_tick(&s_port);
+
 					mh$bk_tick(&s_port);
 					mh$stat_tick(&s_port);
 
@@ -432,6 +459,18 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 
 				case	MH$K_EV_BK:
 					mh$bk_reap(&s_port);
+					break;
+
+				case	MH$K_EV_MOP + MH$K_MOP_V3:
+				case	MH$K_EV_MOP + MH$K_MOP_V4:
+					for ( unsigned l_fmt = l_evs[i].data.u32 - MH$K_EV_MOP; ; )
+						{
+						if ( !(1 & mh$lan_mop_recv(&s_port, l_fmt, l_frame, sizeof(l_frame), &l_len)) || !l_len )
+							break;
+
+						mh$mop_input(&s_port, l_fmt, l_frame, l_len);
+						}
+
 					break;
 
 				case	MH$K_EV_SIGNAL:
@@ -516,6 +555,12 @@ int	l_status;
 		return	1;
 
 	if ( !(1 & mh$mscp_init(&s_port, &s_cfg)) )
+		return	1;
+
+	if ( !(1 & mh$mop_init(&s_port, &s_cfg)) )
+		return	1;
+
+	if ( s_port.nsat && !(1 & mh$lan_mop_open(&s_port)) )
 		return	1;
 
 	/*

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHLAN"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-22"
+#define	__REV__		"1.22.0"
 
 /*
 **++
@@ -36,6 +36,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		24-OCT-2026	RRL	X01-20 : a frame up to an MTU of 9000; the receive buffer for them.
+**		25-OCT-2026	RRL	X01-22 : the sockets of MOP, V3 and V4, for the MOP server.
 **
 **--
 */
@@ -263,6 +264,14 @@ int	mh$lan_close	(
 
 	a_port->sd = -1;
 
+	for ( unsigned i = 0; i < MH$K_MOP_NFMT; i++ )
+		{
+		if ( a_port->mopsd[i] > 0 )
+			close(a_port->mopsd[i]);
+
+		a_port->mopsd[i] = -1;
+		}
+
 	return	STS$K_SUCCESS;
 }
 
@@ -347,26 +356,29 @@ ssize_t		l_sent;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
-**	Receive one frame, if there is one.  Our own frames, which an
-**	AF_PACKET socket sees as PACKET_OUTGOING, are dropped and counted.
+**	Receive one frame from a socket of the port, if there is one.  Our own
+**	frames, which an AF_PACKET socket sees as PACKET_OUTGOING, are dropped
+**	and counted, so are the ones longer than the buffer.
 **
 **  FORMAL PARAMETERS:
 **
 **	a_port		The port context
+**	a_sd		The socket: of NISCA or of MOP
 **	a_frame		Output area for the whole frame, Ethernet header included
 **	a_frmsz		Its size
 **	a_len		Output: the length of the frame, 0 - nothing has been received
 **
 **  IMPLICIT INPUTS/OUTPUTS:
-**	The RX counters of the port.
+**	RX_OWN, RX_DROP of the port.
 **
 **  RETURN VALUE:
 **	STS$K_SUCCESS - a frame is in, or there is none (a_len is 0);
 **	STS$K_ERROR - RECVFROM(2) failed, logged with ERRNO.
 **--
 */
-int	mh$lan_recv	(
+static	int	s_mh$lan_rcv	(
 		MH$PORT *	a_port,
+		int		a_sd,
 		uint8_t *	a_frame,
 		unsigned	a_frmsz,
 		unsigned *	a_len
@@ -382,7 +394,7 @@ ssize_t			l_got;
 		{
 		l_slen = sizeof(l_sll);
 
-		if ( 0 > (l_got = recvfrom(a_port->sd, a_frame, a_frmsz, MSG_TRUNC, (struct sockaddr *) &l_sll, &l_slen)) )
+		if ( 0 > (l_got = recvfrom(a_sd, a_frame, a_frmsz, MSG_TRUNC, (struct sockaddr *) &l_sll, &l_slen)) )
 			{
 			if ( (errno == EAGAIN) || (errno == EWOULDBLOCK) )
 				return	STS$K_SUCCESS;
@@ -412,10 +424,177 @@ ssize_t			l_got;
 			continue;
 			}
 
-		a_port->rx_frames++;
-		a_port->rx_bytes += (uint64_t) l_got;
 		*a_len = (unsigned) l_got;
 
 		return	STS$K_SUCCESS;
 		}
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Receive one NISCA frame, if there is one.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_frame		Output area for the whole frame, Ethernet header included
+**	a_frmsz		Its size
+**	a_len		Output: the length of the frame, 0 - nothing has been received
+**
+**  IMPLICIT INPUTS/OUTPUTS:
+**	The RX counters of the port.
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS - a frame is in, or there is none (a_len is 0);
+**	STS$K_ERROR - RECVFROM(2) failed, logged with ERRNO.
+**--
+*/
+int	mh$lan_recv	(
+		MH$PORT *	a_port,
+		uint8_t *	a_frame,
+		unsigned	a_frmsz,
+		unsigned *	a_len
+			)
+{
+int	l_status;
+
+	if ( (1 & (l_status = s_mh$lan_rcv(a_port, a_port->sd, a_frame, a_frmsz, a_len))) && *a_len )
+		{
+		a_port->rx_frames++;
+		a_port->rx_bytes += *a_len;
+		}
+
+	return	l_status;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Open the sockets of the MOP server: one for the frames of MOP V3 -
+**	Ethernet, the type 60-01 and the length word of the DEC padding - and
+**	one for those of V4 - IEEE 802.3, LLC AA-AA-03 and SNAP
+**	08-00-2B-60-01; the kernel gives the second all of 802.2, the SNAP is
+**	looked at by MHMOP.  Both join the multicast of MOP, AB-00-00-01-00-00,
+**	the address a console asks for a load at.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context, the NISCA socket open; output: MOPSD
+**
+**  IMPLICIT INPUTS/OUTPUTS:
+**	The process must hold CAP_NET_RAW.
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; MH$_SYSERR has been signalled otherwise.
+**--
+*/
+int	mh$lan_mop_open	(
+		MH$PORT *	a_port
+			)
+{
+static	const uint8_t	s_mopmc [NISCA$K_SZ_MAC] = { 0xAB, 0x00, 0x00, 0x01, 0x00, 0x00 };
+static	const uint16_t	s_proto [MH$K_MOP_NFMT] = { MH$K_MOP_ETHERTYPE, ETH_P_802_2 };
+struct sockaddr_ll	l_sll = {0};
+struct packet_mreq	l_mr = {0};
+
+	for ( unsigned i = 0; i < MH$K_MOP_NFMT; i++ )
+		{
+		if ( 0 > (a_port->mopsd[i] = socket(AF_PACKET, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC, htons(s_proto[i]))) )
+			return	$MHMSG(MH$_SYSERR, "socket(AF_PACKET, MOP)", errno, strerror(errno));
+
+		l_sll.sll_family	= AF_PACKET;
+		l_sll.sll_protocol	= htons(s_proto[i]);
+		l_sll.sll_ifindex	= a_port->ifindex;
+
+		if ( bind(a_port->mopsd[i], (struct sockaddr *) &l_sll, sizeof(l_sll)) )
+			return	$MHMSG(MH$_SYSERR, "bind(AF_PACKET, MOP)", errno, strerror(errno));
+
+		l_mr.mr_ifindex	= a_port->ifindex;
+		l_mr.mr_type	= PACKET_MR_MULTICAST;
+		l_mr.mr_alen	= NISCA$K_SZ_MAC;
+		memcpy(l_mr.mr_address, s_mopmc, NISCA$K_SZ_MAC);
+
+		if ( setsockopt(a_port->mopsd[i], SOL_PACKET, PACKET_ADD_MEMBERSHIP, &l_mr, sizeof(l_mr)) )
+			return	$MHMSG(MH$_SYSERR, "setsockopt(PACKET_ADD_MEMBERSHIP, MOP)", errno, strerror(errno));
+		}
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Receive one frame from a socket of MOP, if there is one.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_fmt		The socket: MH$K_MOP_V3, MH$K_MOP_V4
+**	a_frame		Output area for the whole frame
+**	a_frmsz		Its size
+**	a_len		Output: the length of the frame, 0 - nothing has been received
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS - a frame is in, or there is none (a_len is 0);
+**	STS$K_ERROR - RECVFROM(2) failed, logged with ERRNO.
+**--
+*/
+int	mh$lan_mop_recv	(
+		MH$PORT *	a_port,
+		unsigned	a_fmt,
+		uint8_t *	a_frame,
+		unsigned	a_frmsz,
+		unsigned *	a_len
+			)
+{
+	return	s_mh$lan_rcv(a_port, a_port->mopsd[a_fmt], a_frame, a_frmsz, a_len);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Send a frame of MOP, made whole by the caller, by the socket of its
+**	format.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_fmt		MH$K_MOP_V3, MH$K_MOP_V4
+**	a_frame		The frame, padded to the Ethernet minimum
+**	a_len		Its length
+**
+**  IMPLICIT INPUTS/OUTPUTS:
+**	XMIT of the port, when set, takes the frame instead of the socket.
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; STS$K_ERROR - SEND(2) failed, logged with ERRNO.
+**--
+*/
+int	mh$lan_mop_send	(
+		MH$PORT *	a_port,
+		unsigned	a_fmt,
+	const	uint8_t *	a_frame,
+		unsigned	a_len
+			)
+{
+	if ( a_port->xmit )
+		return	a_port->xmit(a_port, a_frame, a_len);
+
+	if ( 0 > send(a_port->mopsd[a_fmt], a_frame, a_len, 0) )
+		return	$LOG_FAO(STS$K_ERROR, "send(!UL octets of MOP) on !AZ failed, errno=!SL", a_len, a_port->ifname, errno);
+
+	return	STS$K_SUCCESS;
 }

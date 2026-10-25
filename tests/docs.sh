@@ -20,6 +20,7 @@
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
 #		22-OCT-2026	RRL	X01-17 : the qualifiers of MHMON.
+#		25-OCT-2026	RRL	X01-22 : /SATELLITE0 ... /SATELLITE7 are one topic.
 #
 
 SRC=$1
@@ -31,8 +32,8 @@ fail ()
 	FAILS=`expr $FAILS + 1`
 }
 
-#	The parameters: $ASCINI("name") of S_OPTS; /UNIT0 ... /UNIT7 are one topic
-OPTS=`sed -n 's/.*\$ASCINI("\([a-z0-9]*\)").*/\1/p' "$SRC/src/mscphub.c" | tr a-z A-Z | sed 's/^UNIT[0-9]$/UNIT0/' | sort -u`
+#	The parameters: $ASCINI("name") of S_OPTS; /UNIT0 ... /UNIT7 are one topic, so are /SATELLITE0 ... /SATELLITE7
+OPTS=`sed -n 's/.*\$ASCINI("\([a-z0-9]*\)").*/\1/p' "$SRC/src/mscphub.c" | tr a-z A-Z | sed 's/^UNIT[0-9]$/UNIT0/;s/^SATELLITE[0-9]$/SATELLITE0/' | sort -u`
 
 [ -n "$OPTS" ] || fail "no parameter found in src/mscphub.c"
 
