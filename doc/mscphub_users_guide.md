@@ -3,9 +3,9 @@
 ## User's Guide
 
     Order Number:       MSCPHUB-UG-0119
-    Software Version:   MSCPHUB Version X01-22
+    Software Version:   MSCPHUB Version X01-23
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-21.
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-22.
     Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
@@ -181,8 +181,8 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 * It cannot yet be a member disk of a shadow set.
 * It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
-* It uses one LAN adapter, and talks to a node through one adapter of the node. A node with two
-  adapters on the LAN of the server uses the first one that opens a channel (see C.9).
+* It uses one LAN adapter. A node with two adapters on the LAN of the server is served by both: the
+  server sends by the one of the larger buffer, and goes on by the other when it fails (see C.9).
 
 MSCPHUB is verified with OpenVMS Alpha Version 8.3, also as the server of the system disk of a
 satellite and as its MOP server (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
@@ -224,8 +224,8 @@ MSCPHUB is built from its kit, `MSCPHUB-`*ident*`.tar.gz`:
 
 ```
 # apt install cmake gcc pkg-config liburing-dev
-# tar xzf MSCPHUB-X01-22.tar.gz
-# cd MSCPHUB-X01-22
+# tar xzf MSCPHUB-X01-23.tar.gz
+# cd MSCPHUB-X01-23
 # cmake -S . -B build
 # cmake --build build -j
 # ctest --test-dir build
@@ -1534,7 +1534,8 @@ puts in; "(s)" stands for a plural ending.
 
     *Explanation:* Written on SIGUSR1 for each node the server knows, after UPTIME. OPEN twice and one
     connection is a node that uses the disks. A count of opens that grows means that the node comes
-    and goes.
+    and goes. A node of two adapters on the LAN of the server is written once for each adapter: the
+    circuit and the connections are on the first, the other says "virtual circuit never started".
 
     *User Action:* None. If the counts grow, see CHCLOSE and VCCLOSE in the log.
 
@@ -2180,6 +2181,19 @@ MHUB3, the server of its own system disk, the disk traffic stayed on the DE500 a
 keeps one channel to a node, here the one of the DE500, by which the loader came, and drops the
 packets of the circuit that come by the other adapter. OpenVMS then marks that channel lossy and
 does not use it.
+
+With Version X01-23 the server takes both adapters of a node. On 26-OCT-2026 SAT1 booted again with
+its DE500 and its 82540EM on the jumbo LAN of MHUB3, loaded by MHUB3 by MOP.
+
+| Test | What happened |
+|---|---|
+| The channels | On SAT1, `SHOW CHANNEL MHUB3`: the EIA open with a buffer of 8100, in use (`Y`); the EWA open at 1426, the spare (`N(T,I,F)`) |
+| A file read and copied | 17792 blocks in 0.6 s, the same checksum; MHUB3 sent 6050 frames longer than 1514 to the 82540EM |
+| The 82540EM lost | Its link taken down 3 s into a copy of 307610 blocks: the copy ended in 34 s, of the same checksum as one made after it. The server closed the channel of the EIA 8 s after the last word by it; the circuit went on over the DE500, it was never closed |
+| The 82540EM back | The channel open again in 2 s, back in use at 8100 within a minute |
+| A crash | SAT1 stopped without a word and booted at once: loaded, a member 43 s after `boot ewa0`, both channels open again |
+
+A node of two adapters is shown twice in `NODESTATS` and in MHMON, once for each adapter.
 
 With Version X01-22 MHUB3 loaded SAT1 by MOP itself (Section 4.13), and ALPHA1 no longer did: its
 MOP service was disabled, the disk dismounted. First, for reference, ALPHA1 loaded SAT1 once more by

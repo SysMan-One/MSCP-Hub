@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTR"
-#define	__IDENT__	"X01-21ECO1"
-#define	__REV__		"1.21.1"
+#define	__IDENT__	"X01-23"
+#define	__REV__		"1.23.0"
 
 /*
 **++
@@ -70,6 +70,9 @@
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: the packets of a circuit are sized by the MTU.
 **		25-OCT-2026	RRL	X01-21ECO1 : LAST_ACCEPTED on every packet with an ACK, as PEDRIVER sends it:
 **						a VMS node measures the delay of its channel to us by it.
+**		26-OCT-2026	RRL	X01-23 : a packet of the circuit taken by any channel of the node, ours sent
+**						by the channel MH$CC_CHAN picks, with its sequence number; a
+**						packet no open channel takes fails the circuit.
 **
 **--
 */
@@ -113,6 +116,22 @@ static	int	s_mh$tr_xmit	(
 {
 uint8_t		l_data [MH$K_SZ_MAXDATA], l_dxdst [NISCA$K_SZ_MAC], *l_tr = l_data + NISCA$K_SZ_DX;
 MH$VC		*l_vc = a_node->vc;
+MH$NODE		*l_ch;
+
+	/*
+	**  The adapter of the node the packet goes to, and its channel.  A
+	**  packet no open channel takes - made for a channel of jumbo frames
+	**  that has closed since - is not sent: the circuit is failed on the
+	**  next tick, out of the callers of this routine, and the node starts
+	**  it again in the size of the channels it has
+	*/
+	if ( !(l_ch = mh$cc_chan(a_port, a_node, NISCA$K_SZ_DX + NISCA$K_TR_LEN_V15 + a_len)) )
+		{
+		if ( l_vc )
+			l_vc->nofit = 1;
+
+		return	STS$K_SUCCESS;
+		}
 
 	nisca$node_mac(a_node->sysid, l_dxdst);
 	mh$dx_build(a_port, l_dxdst, l_data);
@@ -142,7 +161,7 @@ MH$VC		*l_vc = a_node->vc;
 	l_tr[NISCA$K_TR_PAD]	= NISCA$K_TR_LEN_V15 - NISCA$K_TR_LEN_V10;
 	nisca$put16(l_tr + NISCA$K_TR_ACK, (a_flags & NISCA$M_TR_ACK) ? (uint16_t) l_vc->hsr : 0);
 	nisca$put16(l_tr + NISCA$K_TR_SEQ, (uint16_t) a_seq);
-	nisca$put16(l_tr + NISCA$K_TR_RMT_CHSEQ, a_node->rmt_chseq);
+	nisca$put16(l_tr + NISCA$K_TR_RMT_CHSEQ, l_ch->rmt_chseq);
 	l_tr[NISCA$K_TR_PAD_DLEN] = NISCA$K_TR_PAD_DLEN_V15;
 	nisca$put32(l_tr + NISCA$K_TR_ACK_SEQ, (a_flags & NISCA$M_TR_ACK) ? l_vc->hsr : 0);
 	nisca$put32(l_tr + NISCA$K_TR_MSG_SEQ, a_seq);
@@ -160,7 +179,7 @@ MH$VC		*l_vc = a_node->vc;
 		$LOG_FAO(STS$K_INFO, "TR to !AZ (!UL): flags !XB seq !UL ack !UL, !UL octets", a_node->name, a_node->sysid,
 			a_flags, a_seq, (a_flags & NISCA$M_TR_ACK) ? l_vc->hsr : 0, a_len);
 
-	return	mh$lan_send(a_port, a_node->mac, l_data, NISCA$K_SZ_DX + NISCA$K_TR_LEN_V15 + a_len);
+	return	mh$lan_send(a_port, l_ch->mac, l_data, NISCA$K_SZ_DX + NISCA$K_TR_LEN_V15 + a_len);
 }
 
 
@@ -303,6 +322,7 @@ MH$VC	*l_vc = a_node->vc;
 	l_vc->sack	= 0;
 	l_vc->nowed	= 0;
 	l_vc->recover	= 0;
+	l_vc->nofit	= 0;
 	l_vc->nxmt	= l_vc->nq = l_vc->qhead = 0;
 	l_vc->blkhead	= l_vc->blktail = NULL;
 
@@ -701,6 +721,7 @@ static	int	s_mh$tr_deliver	(
 int	mh$tr_input	(
 		MH$PORT *	a_port,
 		MH$NODE *	a_node,
+	const	MH$NODE *	a_chan,
 	const	uint8_t *	a_tr,
 		unsigned	a_len
 			)
@@ -731,9 +752,9 @@ int		l_status = STS$K_SUCCESS;
 		}
 
 	/*
-	**  A packet of an older incarnation of the channel
+	**  A packet of an older incarnation of the channel it came by
 	*/
-	if ( (l_pad >= NISCA$K_TR_LEN_V13 - NISCA$K_TR_LEN_V10) && (nisca$get16(a_tr + NISCA$K_TR_RMT_CHSEQ) != a_node->lcl_chseq) )
+	if ( (l_pad >= NISCA$K_TR_LEN_V13 - NISCA$K_TR_LEN_V10) && (nisca$get16(a_tr + NISCA$K_TR_RMT_CHSEQ) != a_chan->lcl_chseq) )
 		{
 		a_port->tr_old++;
 		return	STS$K_SUCCESS;
@@ -884,6 +905,9 @@ MH$VC	*l_vc = a_node->vc;
 	if ( !l_vc || (l_vc->pbstate == MH$K_PB_CLOSED) )
 		return	STS$K_SUCCESS;
 
+	if ( l_vc->nofit )
+		return	s_mh$tr_fail(a_port, a_node, "a packet is larger than the buffer of every open channel of the node");
+
 	if ( l_vc->sack )
 		s_mh$tr_bare(a_port, a_node, MH$K_ACKW_TICK);
 
@@ -937,7 +961,7 @@ int	l_status = STS$K_SUCCESS;
 		{
 		MH$NODE	*l_node = &a_port->nodes[i];
 
-		if ( (l_node->state == MH$K_CH_OPEN) && l_node->vc && (l_node->vc->pbstate != MH$K_PB_CLOSED) && l_node->vc->sack )
+		if ( !l_node->owner && l_node->vc && (l_node->vc->pbstate != MH$K_PB_CLOSED) && l_node->vc->sack && mh$cc_vcopen(a_port, l_node, NULL) )
 			l_status = s_mh$tr_bare(a_port, l_node, MH$K_ACKW_FLUSH);
 		}
 

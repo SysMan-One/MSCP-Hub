@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-21"
-#define	__REV__		"1.21.0"
+#define	__IDENT__	"X01-23"
+#define	__REV__		"1.23.0"
 
 /*
 **++
@@ -75,6 +75,10 @@
 **		20-OCT-2026	RRL	X01-13 : PIPE_QUOTA 16.
 **		24-OCT-2026	RRL	X01-20 : jumbo frames: BUS_BUFFER_SIZE by an MTU up to 9000, JUMBO.
 **		25-OCT-2026	RRL	X01-21 : SOLICIT_SRV: the channel of the boot driver of a satellite.
+**		26-OCT-2026	RRL	X01-23 : an adapter of a node already known is a channel of that node: its
+**						owner keeps the circuit; the circuit goes by the open channel
+**						of the largest buffer, with the last one closed; a SOLICIT_SRV
+**						closes the other channels of the node.
 **
 **--
 */
@@ -487,7 +491,11 @@ static	int	s_mh$ch_close	(
 	const	char *		a_why
 			)
 {
-	mh$ppd_close(a_port, a_node, a_why);
+	/*
+	**  The circuit goes with the last channel of the node, not before
+	*/
+	if ( !mh$cc_vcopen(a_port, $MHOWNER(a_node), a_node) )
+		mh$ppd_close(a_port, $MHOWNER(a_node), a_why);
 
 	if ( a_node->state == MH$K_CH_OPEN )
 		$MHMSG(MH$_CHCLOSE, a_node->name, a_node->sysid, a_why);
@@ -573,7 +581,7 @@ static	int	s_mh$ch_open	(
 	**  A boot driver waits for the START of its server
 	*/
 	if ( a_node->boot )
-		return	mh$ppd_start_path(a_port, a_node);
+		return	mh$ppd_start_path(a_port, $MHOWNER(a_node));
 
 	return	STS$K_SUCCESS;
 }
@@ -752,7 +760,10 @@ char	l_name [NISCA$K_SZ_NODENAME + 1];
 		else if ( l_node->due && (a_port->tick >= l_node->due) )
 			s_mh$ch_event(a_port, l_node, MH$K_CE_HS_TMO, NULL, 0);
 
-		if ( l_node->state == MH$K_CH_OPEN )
+		/*
+		**  The circuit of a node runs while any of its channels is open
+		*/
+		if ( !l_node->owner && mh$cc_vcopen(a_port, l_node, NULL) )
 			{
 			mh$ppd_tick(a_port, l_node);
 			mh$tr_tick(a_port, l_node);
@@ -829,6 +840,201 @@ int	mh$cc_shutdown	(
 		return	STS$K_SUCCESS;
 
 	return	s_mh$cc_mcast(a_port, NISCA$K_CC_BYE);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Has a node an open channel: one of the entries of its adapters,
+**	the owner's or another, but the one given.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_owner		The owner of the node
+**	a_but		An entry not to count, NULL - none
+**
+**  RETURN VALUE:
+**	1 - it has; 0 - not.
+**--
+*/
+int	mh$cc_vcopen	(
+	const	MH$PORT *	a_port,
+	const	MH$NODE *	a_owner,
+	const	MH$NODE *	a_but
+			)
+{
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		const	MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( (l_ch != a_but) && ($MHOWNER(l_ch) == a_owner) && (l_ch->state == MH$K_CH_OPEN) )
+			return	1;
+		}
+
+	return	0;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	The largest buffer of the open channels of a node: what a chunk of a
+**	block transfer may carry.  A channel that has not told its buffer
+**	(CC V1.1) is taken as an Ethernet.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_owner		The owner of the node
+**
+**  RETURN VALUE:
+**	BUS_BUFFER_SIZE; that of the owner when no channel is open.
+**--
+*/
+unsigned mh$cc_bufsz	(
+	const	MH$PORT *	a_port,
+	const	MH$NODE *	a_owner
+			)
+{
+unsigned	l_best = 0, l_sz;
+
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		const	MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( ($MHOWNER(l_ch) != a_owner) || (l_ch->state != MH$K_CH_OPEN) )
+			continue;
+
+		l_sz = l_ch->bufsz ? l_ch->bufsz : MH$K_LAN_ETHMTU - NISCA$K_SZ_PAD - MH$K_LAN_OVHD;
+
+		if ( l_sz > l_best )
+			l_best = l_sz;
+		}
+
+	return	l_best ? l_best : a_owner->bufsz;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	The channel a packet of the circuit of a node goes by: of the open
+**	channels whose buffer takes it, the one of the largest buffer; the
+**	channel the circuit used last, while it is as good as any, so that
+**	the packets keep to one adapter and their order.  With no channel
+**	of the node open, the owner's: the packet goes as it always did, and
+**	the circuit sends it again if it is lost.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_owner		The owner of the node; output: XCH
+**	a_len		DX header onwards, octets
+**
+**  RETURN VALUE:
+**	The channel; NULL - channels are open, but the packet is larger than
+**	the buffer of every one of them.
+**--
+*/
+MH$NODE	*mh$cc_chan	(
+		MH$PORT *	a_port,
+		MH$NODE *	a_owner,
+		unsigned	a_len
+			)
+{
+MH$NODE		*l_best = NULL;
+unsigned	l_sz, l_bestsz = 0, l_open = 0;
+
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( ($MHOWNER(l_ch) != a_owner) || (l_ch->state != MH$K_CH_OPEN) )
+			continue;
+
+		l_open++;
+		l_sz = l_ch->bufsz ? l_ch->bufsz : MH$K_LAN_ETHMTU - NISCA$K_SZ_PAD - MH$K_LAN_OVHD;
+
+		if ( a_len > l_sz + MH$K_LAN_OVHD )
+			continue;
+
+		if ( !l_best || (l_sz > l_bestsz) || ((l_sz == l_bestsz) && (l_ch == a_owner->xch)) )
+			{
+			l_best	 = l_ch;
+			l_bestsz = l_sz;
+			}
+		}
+
+	if ( !l_best )
+		return	l_open ? NULL : a_owner;
+
+	if ( (l_best != a_owner->xch) && a_owner->xch && a_port->trace )
+		$LOG_FAO(STS$K_INFO, "Circuit to !AZ (!UL) goes by another adapter now, buffer !UL", a_owner->name, a_owner->sysid, l_bestsz);
+
+	a_owner->xch = l_best;
+
+	return	l_best;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Tie an entry to the node it is an adapter of: another entry of the
+**	same system ID and name that owns itself is its owner.  The entries
+**	that had this one for their owner are let go first: it is a new node,
+**	or the same one by another name.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_node		The entry, its system ID and name set; output: OWNER
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS.
+**--
+*/
+static	int	s_mh$cc_link	(
+		MH$PORT *	a_port,
+		MH$NODE *	a_node
+			)
+{
+	a_node->owner = NULL;
+	a_node->xch = NULL;
+
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( l_ch->owner == a_node )
+			l_ch->owner = NULL;
+
+		if ( l_ch->xch == a_node )
+			l_ch->xch = NULL;
+		}
+
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( (l_ch != a_node) && !l_ch->owner && (l_ch->sysid == a_node->sysid) && !strcmp(l_ch->name, a_node->name) )
+			{
+			a_node->owner = l_ch;
+			break;
+			}
+		}
+
+	return	STS$K_SUCCESS;
 }
 
 
@@ -930,7 +1136,12 @@ unsigned	l_nlen;
 		else	{
 			for ( unsigned i = 0; i < a_port->nnode; i++ )
 				{
-				if ( (a_port->nodes[i].state == MH$K_CH_CLOSED) && (!l_node || (a_port->nodes[i].last < l_node->last)) )
+				/*
+				**  Not the owner of a node whose circuit runs over
+				**  another adapter of it
+				*/
+				if ( (a_port->nodes[i].state == MH$K_CH_CLOSED) && !mh$cc_vcopen(a_port, &a_port->nodes[i], NULL)
+					&& (!l_node || (a_port->nodes[i].last < l_node->last)) )
 					l_node = &a_port->nodes[i];
 				}
 
@@ -951,6 +1162,12 @@ unsigned	l_nlen;
 	l_node->cclen	= (uint8_t) $MIN(a_cclen, 0xFF);
 	l_node->last	= a_port->tick;		/* Before the clash checks: a node is aged from now	*/
 	memcpy(l_node->name, l_name, l_nlen + 1);
+
+	/*
+	**  Another adapter of a node we know: its channel serves the circuit
+	**  of that node
+	*/
+	s_mh$cc_link(a_port, l_node);
 
 	$MHMSG(MH$_NEWNODE, l_node->name, l_node->sysid, l_macstr, l_node->minor, a_cclen);
 
@@ -1060,6 +1277,19 @@ int		l_status, l_served;
 	if ( l_served < 0 )
 		return	STS$K_SUCCESS;
 
+	/*
+	**  A node that boots has no runtime channel left: those of its other
+	**  adapters are closed - an old one of jumbo frames, open after a crash
+	**  without BYE, would carry the loader's blocks in a size it cannot take
+	*/
+	for ( unsigned i = 0; i < a_port->nnode; i++ )
+		{
+		MH$NODE	*l_ch = &a_port->nodes[i];
+
+		if ( (l_ch != a_node) && ($MHOWNER(l_ch) == $MHOWNER(a_node)) && (l_ch->state != MH$K_CH_CLOSED) )
+			s_mh$ch_close(a_port, l_ch, "the node boots by another adapter");
+		}
+
 	return	s_mh$ch_event(a_port, a_node, MH$K_CE_SOLICIT, a_cc, a_cclen);
 }
 
@@ -1150,7 +1380,10 @@ char		l_macstr [3 * NISCA$K_SZ_MAC];
 
 		l_node->last = a_port->tick;
 
-		return	mh$tr_input(a_port, l_node, l_dx + NISCA$K_SZ_DX, l_dlen - NISCA$K_SZ_DX);
+		/*
+		**  Of the circuit of the node, whichever adapter of it it came by
+		*/
+		return	mh$tr_input(a_port, $MHOWNER(l_node), l_node, l_dx + NISCA$K_SZ_DX, l_dlen - NISCA$K_SZ_DX);
 		}
 
 	a_port->rx_cc++;

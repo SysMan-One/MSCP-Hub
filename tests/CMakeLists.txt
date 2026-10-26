@@ -19,6 +19,7 @@
 #		22-OCT-2026	RRL	X01-18 : the scripts of OpenRC and System V init.
 #		25-OCT-2026	RRL	X01-21 : the system disk of a satellite, T_BOOT.
 #		25-OCT-2026	RRL	X01-22 : the reader of Files-11, T_ODS; the MOP server, T_MOP.
+#		26-OCT-2026	RRL	X01-23 : a node of two adapters, T_MCHAN.
 #
 #---
 
@@ -45,6 +46,12 @@ add_executable(t_boot t_boot.c)
 target_link_libraries(t_boot PRIVATE mhcore)
 
 add_test(NAME boot COMMAND t_boot)
+
+add_executable(t_mchan t_mchan.c)
+
+target_link_libraries(t_mchan PRIVATE mhcore)
+
+add_test(NAME mchan COMMAND t_mchan)
 
 add_executable(t_ods t_ods.c)
 

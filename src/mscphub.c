@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X01-23"
+#define	__REV__		"1.23.0"
 
 /*
 **++
@@ -74,6 +74,8 @@
 **		25-OCT-2026	RRL	X01-21ECO1 : LAST_ACCEPTED in the TR header: the delay of the channel.
 **		25-OCT-2026	RRL	X01-22 : the MOP server of a diskless Alpha satellite (/SATELLITEn),
 **						its files read from its system disk.
+**		26-OCT-2026	RRL	X01-23 : the second adapter of a node serves its circuit: a satellite of a
+**						DE500 and an 82540EM reads its disk in jumbo frames.
 **
 **--
 */

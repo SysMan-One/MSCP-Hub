@@ -3,9 +3,9 @@
 ## Programmer's Guide
 
     Order Number:       MSCPHUB-PG-0119
-    Software Version:   MSCPHUB Version X01-22
+    Software Version:   MSCPHUB Version X01-23
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-21.
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-22.
     Date:               25-OCT-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
@@ -296,6 +296,18 @@ is marked `boot`: it is kept 30 seconds without a word instead of 8, and when it
 starts the path itself. The CCSTART of the runtime PEDRIVER of the satellite restarts the channel as
 an ordinary one. `SOLICIT` tells the operator once a boot.
 
+An entry of the table is an adapter of a node, and the channel to it. A node of two adapters on the
+LAN of the server - a satellite of a DE500 and an 82540EM - has two entries of the same system ID and
+name: the first one seen is the owner (`$MHOWNER`), and the circuit, the connections and the units
+ONLINE are of it; the other points at it. Each entry has its own handshake, channel sequence numbers
+and buffer. A TR packet is taken by the circuit of the owner whichever open channel of the node it
+comes by, its channel sequence number checked against that channel. `mh$cc_chan` picks the channel
+a packet of the circuit goes by: of the open ones whose buffer takes it, the one of the largest
+buffer, the one used last while it is as good. The circuit closes with the last channel of the node,
+not before; a served SOLICIT_SRV closes the other channels of the node, since a node that boots has
+no runtime channel left. An owner whose circuit runs over another adapter is never taken for a new
+node when the table is full.
+
 ## 3.4 mh_tr.c
 
 The transport of the virtual circuit: sequence numbers in longwords, a cumulative acknowledgement,
@@ -314,6 +326,12 @@ buffers in one pool, allocated with the circuit and sized by the MTU of the port
 a chunk on an Ethernet, 8926 with jumbo frames of an MTU of 9000. A slot owns its buffer: a queued
 message is copied into the slot of the window, and the slots an ACK frees hand their buffers to the
 tail that the move of the window leaves behind.
+
+A packet goes by the channel `mh$cc_chan` picks, with the address and the channel sequence number of
+that channel, and a chunk of a block transfer is as large as the best open channel of the node takes
+(`mh$cc_bufsz`). When the channel of jumbo frames closes with chunks of 8100 octets in the window, no
+open channel takes them: they are not sent to the other adapter, the circuit is failed on the next
+tick (`NOFIT`), and the node starts it again in the size of the channels it has.
 
 ## 3.5 mh_ppd.c
 
@@ -445,7 +463,7 @@ All are declared in `include/mh_def.h`.
 |---|---|
 | `MH$CFG` | The configuration: the values of the qualifiers |
 | `MH$PORT` | The LAN port and everything below it: the socket, the table of the nodes, the counters |
-| `MH$NODE` | A node seen on the LAN: its identity and the state of the channel to it |
+| `MH$NODE` | An adapter of a node seen on the LAN: its identity, the channel to it; the owner of the node, the circuit |
 | `MH$VC` | The virtual circuit to a node: the numbers, the window, the queues, the connections |
 | `MH$TRPKT` | A packet in the transmit queue of a circuit |
 | `MH$CDT` | An SCS connection: its state, its credits, its queue |
@@ -780,6 +798,7 @@ not in the kit.
 | `scs` | SCS and the directory; the MSCP server: STCON, GET UNIT STATUS, ONLINE, AVAILABLE, the checks of a command, credits |
 | `blk` | READ, WRITE, COMPARE and ERASE over the block transfers; the order of the commands; ABORT; a connection that goes while the disk has a command |
 | `bk` | The backend: io_uring, read-modify-write, ranges of sectors, the cache of written sectors, ERASE, group commit, direct I/O |
+| `mchan` | A node of two adapters: the second channel serves the circuit of the first, a packet goes by the channel of the larger buffer with its sequence number, the circuit outlives a channel, a packet too large for the channels left fails it at once, a SOLICIT_SRV closes the other channels |
 | `ods` | The reader of Files-11 on a small volume made by the test (`tests/t_vol.h`): the home block, INDEXF.SYS, an alias, versions, extents and extension headers, a wrong sequence number or checksum |
 | `mop` | The MOP server: a satellite loaded from the volume of `ods`, V4 and V3, the parameters item by item, the timers, the requests not answered |
 | `stat` | The statistics block: made, copied every 100 ms, never a torn copy under a writer in another thread, another layout refused, the queues; the answers of Modbus |
@@ -805,7 +824,6 @@ not in the kit.
 |---|---|
 | 8 disks per server | `/UNIT0` to `/UNIT7` in `s_opts`, `mscphub.c` |
 | One LAN adapter | `mh_lan.c` |
-| One channel to a node: a node with two adapters on the LAN of the server uses one | `mh_cc.c`, `MH$NODE` |
 | 8 Modbus clients at a time | `mh_mbus.c` |
 | 64 nodes remembered | `mh_cc.c`, `MANYNODES` |
 | Window of 16 packets per circuit | `mh_tr.c` |

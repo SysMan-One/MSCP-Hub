@@ -1054,7 +1054,10 @@ Severity: information.
 
 Explanation: Written on SIGUSR1 for each node the server knows, after
 UPTIME. OPEN twice and one connection is a node that uses the disks. A
-count of opens that grows means that the node comes and goes.
+count of opens that grows means that the node comes and goes. A node
+of two adapters on the LAN of the server is written once for each: the
+circuit and the connections are on the first, the other says "virtual
+circuit never started".
 
 User Action: None. If the counts grow, see CHCLOSE and VCCLOSE in the
 log.

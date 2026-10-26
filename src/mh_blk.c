@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHBLK"
-#define	__IDENT__	"X01-20"
-#define	__REV__		"1.20.0"
+#define	__IDENT__	"X01-23"
+#define	__REV__		"1.23.0"
 
 /*
 **++
@@ -47,6 +47,7 @@
 **
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		24-OCT-2026	RRL	X01-20 : a chunk is held to the packet of the circuit as well.
+**		26-OCT-2026	RRL	X01-23 : a chunk is as large as the best open channel of the node takes.
 **
 **--
 */
@@ -166,7 +167,7 @@ int	mh$blk_chunk	(
 {
 MH$VC		*l_vc = a_node->vc;
 MH$HRB		*l_hrb;
-uint32_t	l_max, l_size;
+uint32_t	l_max, l_size, l_sz;
 int		l_last;
 
 	if ( !l_vc || !(l_hrb = l_vc->blkhead) )
@@ -178,9 +179,10 @@ int		l_last;
 	**  jumbo frames on both.  Never more than a packet of the circuit holds.
 	*/
 	l_max = a_port->bufsz;
+	l_sz  = mh$cc_bufsz(a_port, a_node);
 
-	if ( a_node->bufsz && (a_node->bufsz < l_max) )
-		l_max = a_node->bufsz;
+	if ( l_sz && (l_sz < l_max) )
+		l_max = l_sz;
 
 	l_max = $MIN(l_max, l_vc->paysz - 1 - NISCA$K_BLK_HLEN);
 

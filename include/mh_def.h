@@ -67,6 +67,7 @@
 **		25-OCT-2026	RRL	X01-22 : the MOP server of a satellite (MHMOP) and the reader of
 **						its system disk (MHODS); SATCFG, MOPVOL, MOPLOAD, MOPFAIL,
 **						MOPSTATS.
+**		26-OCT-2026	RRL	X01-23 : MH$NODE: OWNER and XCH, $MHOWNER; MH$VC: NOFIT.
 **
 **--
 */
@@ -76,11 +77,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-22"
+#define	__IDENT__	"X01-23"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.22.0"
+#define	__REV__		"1.23.0"
 #endif
 
 #ifndef	__FAC__
@@ -749,6 +750,7 @@ typedef struct mh_vc_t {
 	uint64_t	stdue;			/* ST_SENT: tick our START goes again		*/
 	int		sack;			/* ACK owed: 1 - on the next tick, 2 - now	*/
 	int		recover;		/* A timeout: a partial ACK resends the head	*/
+	int		nofit;			/* A packet fitted no open channel: fail it	*/
 	unsigned	nowed;			/* Packets taken since our last ACK		*/
 
 	unsigned	paysz;			/* The data of a packet at most: by the MTU	*/
@@ -786,10 +788,15 @@ typedef struct mh_vc_t {
 } MH$VC;
 
 /*
-**  A node seen on the LAN, and our channel to it: the server has one
-**  adapter, so a node has one channel.  An entry is kept when the node
-**  falls silent - the channel sequence number must not start over, the
-**  peer puts it in every TR packet it sends us.
+**  An adapter of a node seen on the LAN, and our channel to it: the server
+**  has one adapter, so a channel is one adapter of the node.  The first
+**  entry of a node is its owner: the virtual circuit, the connections and
+**  the units ONLINE are of it.  An entry of another adapter of the same
+**  node - the same system ID, the same name - points at the owner; the
+**  packets of the circuit come by any open channel of the node and go by
+**  the best one.  An entry is kept when the node falls silent - the
+**  channel sequence number must not start over, the peer puts it in every
+**  TR packet it sends us.
 */
 typedef struct mh_node_t {
 	uint8_t		mac [NISCA$K_SZ_MAC];	/* Its adapter					*/
@@ -815,7 +822,11 @@ typedef struct mh_node_t {
 	uint32_t	sollogs;		/* SOLICIT messages about it			*/
 
 	MH$VC *		vc;			/* NULL - never had a START			*/
+	struct mh_node_t *owner;		/* The entry of the node, NULL - this one	*/
+	struct mh_node_t *xch;			/* Of an owner: the channel the circuit uses	*/
 } MH$NODE;
+
+#define	$MHOWNER(a_node)	((a_node)->owner ? (a_node)->owner : (a_node))
 
 /*
 **  A unit of the MSCP server
@@ -1020,13 +1031,16 @@ int	mh$cc_shutdown	(MH$PORT *a_port);
 int	mh$cc_input	(MH$PORT *a_port, const uint8_t *a_frame, unsigned a_len);
 int	mh$dx_build	(const MH$PORT *a_port, const uint8_t *a_dxdst, uint8_t *a_dx);
 int	mh$cc_restart	(MH$PORT *a_port, MH$NODE *a_node, const char *a_why);
+int	mh$cc_vcopen	(const MH$PORT *a_port, const MH$NODE *a_owner, const MH$NODE *a_but);
+MH$NODE *mh$cc_chan	(MH$PORT *a_port, MH$NODE *a_owner, unsigned a_len);
+unsigned mh$cc_bufsz	(const MH$PORT *a_port, const MH$NODE *a_owner);
 
 /*
 **  MHTR.C
 */
 int	mh$tr_open	(MH$PORT *a_port, MH$NODE *a_node);
 int	mh$tr_reset	(MH$PORT *a_port, MH$NODE *a_node);
-int	mh$tr_input	(MH$PORT *a_port, MH$NODE *a_node, const uint8_t *a_tr, unsigned a_len);
+int	mh$tr_input	(MH$PORT *a_port, MH$NODE *a_node, const MH$NODE *a_chan, const uint8_t *a_tr, unsigned a_len);
 int	mh$tr_tick	(MH$PORT *a_port, MH$NODE *a_node);
 int	mh$tr_flush	(MH$PORT *a_port);
 int	mh$tr_send_dg	(MH$PORT *a_port, MH$NODE *a_node, const uint8_t *a_ppd, unsigned a_len);
