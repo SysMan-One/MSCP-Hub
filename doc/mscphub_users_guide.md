@@ -328,8 +328,10 @@ $ MCR SYSMAN CONFIGURATION SHOW CLUSTER_AUTHORIZATION
 $ DUMP SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT
 ```
 
-Take the quadword at offset 8 and write its octets from the lowest one. The longwords
-`00000000 8EF54F24` there give `/AUTHORIZE=5A3C9E1700000000`.
+The file starts with the group number, a longword at offset 0; the hash is the quadword at
+offset 4. Write the 8 octets from offset 4 in file order, the lowest one first. DUMP shows each
+line from right to left, so offset 0 is the rightmost longword. A first line ending in
+`00000000 179E3C5A 00001092` (group 4242, hash 179E3C5A) gives `/AUTHORIZE=5A3C9E1700000000`.
 
 **The names and the system IDs in use:**
 

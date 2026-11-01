@@ -78,8 +78,10 @@ OpenVMS node:
 $ DUMP SYS$SYSTEM:CLUSTER_AUTHORIZE.DAT
 ```
 
-The hash is the quadword at offset 8. The longwords 00000000 8EF54F24
-there give /AUTHORIZE=5A3C9E1700000000.
+The group number is the longword at offset 0, the hash the quadword at
+offset 4: give the 8 octets from offset 4 in file order. DUMP shows a
+line from right to left; a first line ending in 00000000 179E3C5A
+00001092 (group 4242) gives /AUTHORIZE=5A3C9E1700000000.
 
 ## /CONFIG -- read the qualifiers from a file
 
