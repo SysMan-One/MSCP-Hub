@@ -61,6 +61,13 @@ manual page, the help libraries and the guides. `cmake --build build --target
 uninstall` removes what was installed; `--target dist` makes the kit of the
 committed sources.
 
+Packages and platforms.  The releases carry a `.deb` for amd64 and arm64, built
+on Debian 12 and installed on Debian 12 and 13 and on Ubuntu 24.04 by GitHub
+Actions (`.github/workflows/release.yml`).  The 15 regression tests were run on
+aarch64 on 3-NOV-2026: on Oracle Linux 9 on a Neoverse-N1 (Oracle Cloud, 2 vCPU,
+kernel 6.12) and on a Cortex-A72 board with Ubuntu 20.04 (glibc 2.31, kernel
+5.10); all pass.
+
 ## Run
 
 Check the configuration first: `/PASSIVE` only listens and sends nothing.
