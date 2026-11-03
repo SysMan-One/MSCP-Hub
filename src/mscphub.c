@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-23"
-#define	__REV__		"1.23.0"
+#define	__IDENT__	"X01-24"
+#define	__REV__		"1.24.0"
 
 /*
 **++
@@ -76,6 +76,8 @@
 **						its files read from its system disk.
 **		26-OCT-2026	RRL	X01-23 : the second adapter of a node serves its circuit: a satellite of a
 **						DE500 and an 82540EM reads its disk in jumbo frames.
+**		03-NOV-2026	RRL	X01-24 : links librt (shm_open before glibc 2.34); built and tested on
+**						aarch64, Ubuntu 20.04.
 **
 **--
 */

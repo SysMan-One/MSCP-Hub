@@ -24,6 +24,7 @@
 #		22-OCT-2026	RRL	X01-19 : the parameter file in /etc/mscphub (MH_CONFDIR), not
 #						/etc/opt/mscphub.
 #		25-OCT-2026	RRL	X01-22 : MHODS, the reader of Files-11, and MHMOP, the MOP server.
+#		03-NOV-2026	RRL	X01-24 : librt for shm_open on glibc older than 2.34.
 #
 #---
 
@@ -163,7 +164,10 @@ pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
 #	The counters over Modbus/TCP are served by a thread of their own
 find_package(Threads REQUIRED)
 
-target_link_libraries(mhcore PUBLIC StarLet::starlet PkgConfig::URING Threads::Threads mh_options)
+#	shm_open()/shm_unlink() are in librt before glibc 2.34 (Ubuntu 20.04, Debian 10)
+find_library(MH_RT rt)
+
+target_link_libraries(mhcore PUBLIC StarLet::starlet PkgConfig::URING Threads::Threads mh_options ${MH_RT})
 
 if ( HELP_FOUND )
 	message(STATUS "MSCPHUB: /HELP answered out of the library, HELP ${HELP_VERSION} from ${HELP_DIR}")
