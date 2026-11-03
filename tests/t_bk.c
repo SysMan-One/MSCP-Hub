@@ -413,6 +413,13 @@ int			l_fd, l_ok;
 		close(l_fd);
 		l_n = (unsigned) s_d512.nsync - l_n0;
 		l_ok = l_ok && ((unsigned) s_d512.nsyncw - l_w0 == 24) && (l_n >= 1);
+
+		/*  The last completion is delivered before the engine puts its state back */
+		for ( unsigned i = 0; i < 200 && (s_d512.gbusy || s_d512.gpend || s_d512.ginfl); i++ )
+			usleep(10000);
+
+		printf("T_BK: group attempt %u: ok %d, fdatasync %u, writes %u, busy %d, pend %p, infl %p\n", l_try, l_ok, l_n,
+			(unsigned) s_d512.nsyncw - l_w0, (int) s_d512.gbusy, (void *) s_d512.gpend, (void *) s_d512.ginfl);
 		}
 
 	$CHECK(l_ok && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
