@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BK"
-#define	__IDENT__	"X01-15"
-#define	__REV__		"1.15.0"
+#define	__IDENT__	"X01-15ECO1"
+#define	__REV__		"1.15.1"
 
 /*
 **++
@@ -34,6 +34,9 @@
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		21-OCT-2026	RRL	X01-15 : a file O_DIRECT; odd byte counts, NODIRECT.
+**		 3-NOV-2026	RRL	X01-15ECO1 : group commit: the grouping is checked with a
+**						fdatasync made out to be in flight, not with the speed
+**						of the disk (60 runs on a GitHub runner: 2 to 24 of 24).
 **
 **--
 */
@@ -380,51 +383,89 @@ int			l_fd, l_ok;
 	close(l_fd);
 
 	/*
-	**  Group commit: 24 WRITEs at once, a few fdatasync for all of them.
-	**  The data and the counters must be right every time; that the writes
-	**  were grouped depends on the speed of the file system - a fdatasync
-	**  that returns at once (a RAM disk, a container) leaves nothing to
-	**  group - so it must happen in one of 5 attempts.
+	**  Group commit, the grouping itself, with no help from the clock.  How
+	**  many writes one fdatasync covers depends on how fast the file system
+	**  is: on a CI runner it went from 2 to 24 of 24 between two runs, a
+	**  fdatasync that returns before the next write is done leaves nothing to
+	**  group - and so that cannot be asserted.  What can: a fdatasync is made
+	**  out to be in flight (GBUSY), 24 writes are done and wait for it
+	**  (GPEND, nothing sent), then GBUSY goes off and the 25th write sends
+	**  ONE fdatasync for all of them.  The engine of the test is the caller of
+	**  mh$bk_wait(), nothing else touches the state.
 	*/
-	unsigned	l_try, l_n0, l_w0;
+	unsigned	l_w0, l_len;
+	uint64_t	l_n0;
 
-	l_ok = 1;
-	l_n = 24;
+	s_given = 0;
+	memcpy(s_want, s_img, T$K_IMGSZ);
+	l_n0 = s_d512.nsync;
+	l_w0 = (unsigned) s_d512.nsyncw;
+	s_d512.gbusy = 1;
 
-	for ( l_try = 0; l_try < 5 && l_ok && l_n >= 24; l_try++ )
+	for ( unsigned i = 0; i < 24; i++ )
 		{
-		s_given = 0;
-		memcpy(s_want, s_img, T$K_IMGSZ);
-		l_n0 = (unsigned) s_d512.nsync;
-		l_w0 = (unsigned) s_d512.nsyncw;
-
-		for ( unsigned i = 0; i < 24; i++ )
-			{
-			memset(l_buf[i], (int) (0xA0 + i), 4096);
-			s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
-			}
-
-		l_ok = s_t$wait(&s_port, 24);
-		l_fd = open(l_img, O_RDONLY);
-
-		for ( unsigned i = 0; i < 24; i++ )
-			l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
-
-		close(l_fd);
-		l_n = (unsigned) s_d512.nsync - l_n0;
-		l_ok = l_ok && ((unsigned) s_d512.nsyncw - l_w0 == 24) && (l_n >= 1);
-
-		/*  The last completion is delivered before the engine puts its state back */
-		for ( unsigned i = 0; i < 200 && (s_d512.gbusy || s_d512.gpend || s_d512.ginfl); i++ )
-			usleep(10000);
-
-		printf("T_BK: group attempt %u: ok %d, fdatasync %u, writes %u, busy %d, pend %p, infl %p\n", l_try, l_ok, l_n,
-			(unsigned) s_d512.nsyncw - l_w0, (int) s_d512.gbusy, (void *) s_d512.gpend, (void *) s_d512.ginfl);
+		memset(l_buf[i], (int) (0xA0 + i), 4096);
+		memcpy(s_want + 65536 + i * 4096, l_buf[i], 4096);
+		s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
 		}
 
-	$CHECK(l_ok && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
-		"GROUP: 24 WRITEs, every one on the file, fewer fdatasync than writes");
-	printf("T_BK: group commit - %u fdatasync for 24 writes (attempt %u)\n", l_n, l_try);
+	for ( unsigned i = 0; i < 3000; i++ )
+		{
+		l_len = 0;
+
+		for ( MH$BKREQ *l_p = s_d512.gpend; l_p; l_p = l_p->next )
+			l_len++;
+
+		if ( l_len >= 24 )
+			break;
+
+		mh$bk_wait(&s_port, 10);
+		}
+
+	l_ok = (l_len == 24) && !s_given && (s_d512.nsync == l_n0) && !s_d512.ginfl;
+	$CHECK(l_ok, "GROUP: 24 WRITEs done wait for the fdatasync in flight, none is sent");
+
+	s_d512.gbusy = 0;
+	memset(l_buf[24], 0xC8, 4096);
+	memcpy(s_want + 65536 + 24 * 4096, l_buf[24], 4096);
+	s_t$submit(&s_req[24], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + 24 * 4096, 4096, l_buf[24]);
+	l_ok = l_ok && s_t$wait(&s_port, 25);
+	l_fd = open(l_img, O_RDONLY);
+
+	for ( unsigned i = 0; i < 25; i++ )
+		l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
+
+	close(l_fd);
+	$CHECK(l_ok && (s_d512.nsync - l_n0 == 1) && ((unsigned) s_d512.nsyncw - l_w0 == 25) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
+		"GROUP: ONE fdatasync for 25 WRITEs, every one on the file");
+
+	/*
+	**  And the same with the clock in charge: 24 WRITEs at once.  How many
+	**  fdatasync they get is anybody's guess (1 to 24); the data and the
+	**  counters must be right every time.
+	*/
+	s_given = 0;
+	memcpy(s_want, s_img, T$K_IMGSZ);
+	l_n0 = s_d512.nsync;
+	l_w0 = (unsigned) s_d512.nsyncw;
+
+	for ( unsigned i = 0; i < 24; i++ )
+		{
+		memset(l_buf[i], (int) (0x70 + i), 4096);
+		s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
+		}
+
+	l_ok = s_t$wait(&s_port, 24);
+	l_fd = open(l_img, O_RDONLY);
+
+	for ( unsigned i = 0; i < 24; i++ )
+		l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
+
+	close(l_fd);
+	l_n = (unsigned) (s_d512.nsync - l_n0);
+	$CHECK(l_ok && (l_n >= 1) && (l_n <= 24) && ((unsigned) s_d512.nsyncw - l_w0 == 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
+		"GROUP: 24 WRITEs at once, every one on the file, each covered by a fdatasync");
+	printf("T_BK: group commit - %u fdatasync for 24 writes\n", l_n);
 
 	/*
 	**  A file: O_DIRECT if its file system takes it.  A byte count not a
