@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-24ECO1"
-#define	__REV__		"1.24.1"
+#define	__IDENT__	"X01-24ECO2"
+#define	__REV__		"1.24.2"
 
 /*
 **++
@@ -80,6 +80,8 @@
 **						aarch64, Ubuntu 20.04.
 **		03-NOV-2026	RRL	X01-24ECO1 : the .deb by CPack and the GitHub workflow that builds it
 **						for amd64 and arm64 on a tag.
+**		03-NOV-2026	RRL	X01-24ECO2 : the workflow in a container with --init and seccomp=unconfined;
+**						T_BK: the group commit test is steady on a fast file system.
 **
 **--
 */
