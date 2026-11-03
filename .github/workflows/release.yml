@@ -53,7 +53,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container:
       image: debian:bookworm
-      options: --security-opt seccomp=unconfined      # the default profile of Docker denies io_uring
+      options: --init --security-opt seccomp=unconfined      # --init: PID 1 reaps the stopped daemons (the test of init.sh)
     steps:
       - name: Install prerequisites
         run: |
