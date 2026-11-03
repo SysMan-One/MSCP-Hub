@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-24"
-#define	__REV__		"1.24.0"
+#define	__IDENT__	"X01-24ECO1"
+#define	__REV__		"1.24.1"
 
 /*
 **++
@@ -78,6 +78,8 @@
 **						DE500 and an 82540EM reads its disk in jumbo frames.
 **		03-NOV-2026	RRL	X01-24 : links librt (shm_open before glibc 2.34); built and tested on
 **						aarch64, Ubuntu 20.04.
+**		03-NOV-2026	RRL	X01-24ECO1 : the .deb by CPack and the GitHub workflow that builds it
+**						for amd64 and arm64 on a tag.
 **
 **--
 */

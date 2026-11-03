@@ -1,0 +1,173 @@
+#++
+#   DESCRIPTION: The .deb packages of MSCPHUB (amd64, arm64) for a GitHub Release
+#
+#   AUTHOR: Ruslan R. Laishev (BMF, The BadAss SysMan)
+#
+#   CREATION DATE: 03-NOV-2026
+#
+#	A push of the tag vX01-NN[ECOnn] builds the packages, runs the regression tests of
+#	both architectures and attaches the packages, the manuals (PDF) and the sources tarball
+#	to the Release of that tag.  The manual run (Actions -> release -> Run workflow) with
+#	the <tag> input does the same for an existing tag (the files of its Release are
+#	replaced); without it - only builds and tests the branch, see the run's artifacts.
+#
+#	Built on Debian 12 (bookworm): the binary needs glibc >= 2.34 and liburing >= 2.3
+#	(bookworm, trixie, Ubuntu 24.04 and newer).  StarLet and HELP are linked statically.
+#	Every package is installed on bookworm, trixie and noble before the release.
+#
+#	MODIFICATION HISTORY:
+#
+#	03-NOV-2026	RRL	Initial version.
+#--
+
+name: release
+
+on:
+  push:
+    tags: ['vX*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag (vX01-24) to build and release; empty - build only"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  STARLET_REPO: "https://gitlab.com/SysMan-One/utility_routines.git"
+  HELP_REPO: "https://github.com/SysMan-One/vHELP.git"
+
+jobs:
+  deb:
+    name: build ${{ matrix.arch }}
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: debian:bookworm
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential cmake pkg-config \
+            liburing-dev dpkg-dev file git ca-certificates
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Build and install StarLet and HELP
+        run: |
+          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
+          cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/starlet/build -j "$(nproc)"
+          cmake --install /tmp/starlet/build
+          git clone --depth 1 "$HELP_REPO" /tmp/help
+          git -C /tmp/help log -1 --format='HELP: %H %cd'
+          cmake -S /tmp/help -B /tmp/help/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/help/build -j "$(nproc)"
+          cmake --install /tmp/help/build
+
+      - name: Build, test, package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMH_SYSTEMD=ON
+          cmake --build build -j "$(nproc)"
+          (cd build && ctest --output-on-failure)
+          (cd build && cpack -G DEB)
+
+      - name: Check the package
+        run: |
+          deb=$(ls build/*.deb)
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb"
+          case "$deb" in *_${{ matrix.arch }}.deb) ;; *) echo "Wrong architecture: $deb"; exit 1;; esac
+          dpkg-deb --contents "$deb" | grep -q 'share/help/mscphub.hlb'
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: deb-${{ matrix.arch }}
+          path: build/*.deb
+          if-no-files-found: error
+
+  test:
+    name: install ${{ matrix.arch }} on ${{ matrix.distro }}
+    needs: deb
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        distro: ['debian:bookworm', 'debian:trixie', 'ubuntu:noble']
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.distro }}
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: deb-${{ matrix.arch }}
+
+      - name: Install the package
+        run: |
+          apt-get update
+          apt-get install --yes ./*.deb
+          test -x /opt/mscphub/sbin/mscphub
+          test -x /opt/mscphub/sbin/mhmon
+          test -f /lib/systemd/system/mscphub.service
+          test -f /etc/mscphub/mscphub.conf.example
+
+      - name: Start the program
+        run: |
+          /opt/mscphub/sbin/mscphub /HELP | head -n 5
+          ldd /opt/mscphub/sbin/mscphub
+          dpkg --remove mscphub
+          test ! -e /opt/mscphub/sbin/mscphub
+
+  release:
+    name: GitHub Release
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(inputs.tag, 'v')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          path: src
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: 'deb-*'
+          merge-multiple: true
+
+      - name: Attach the packages to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          ident=$(sed -n 's/^#define[[:space:]]*__IDENT__[[:space:]]*"\(.*\)"/\1/p' src/src/mscphub.c)
+          rev=$(sed -n 's/^#define[[:space:]]*__REV__[[:space:]]*"\(.*\)"/\1/p' src/src/mscphub.c)
+          test -n "$ident" && test -n "$rev"
+          test "$TAG" = "v$ident" || { echo "$TAG is not v$ident"; exit 1; }
+          for pkg in *.deb; do        # The package version is __REV__ of the head module
+            case "$pkg" in mscphub_${rev}-*) ;; *) echo "$pkg does not match $rev"; exit 1;; esac
+          done
+          for f in users_guide users_guide_ru programmers_guide programmers_guide_ru; do
+            cp "src/doc/mscphub_$f.pdf" "MSCPHUB-$ident-$f.pdf"
+          done
+          git -C src archive --format=tar.gz --prefix="MSCPHUB-$ident/" \
+            -o "$PWD/MSCPHUB-$ident.tar.gz" HEAD
+          ls -l *.deb *.pdf *.tar.gz
+          sha256sum *.deb *.tar.gz > SHA256SUMS
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS --clobber
+          else
+            gh release create "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS --title "MSCPHUB $ident" --notes-file - <<EOF
+          MSCP disk server for OpenVMS nodes, over NISCA. The .deb for amd64 and arm64 is installed on Debian 12, Debian 13 and Ubuntu 24.04 (glibc >= 2.34 and liburing >= 2.3). Install: \`sudo apt install ./mscphub_${rev}-1_<arch>.deb\`. The files are in /opt/mscphub, the sample of the parameter file in /etc/mscphub; the systemd units are installed, never enabled.
+          EOF
+          fi

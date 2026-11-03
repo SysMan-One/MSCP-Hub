@@ -25,6 +25,8 @@
 #						/etc/opt/mscphub.
 #		25-OCT-2026	RRL	X01-22 : MHODS, the reader of Files-11, and MHMOP, the MOP server.
 #		03-NOV-2026	RRL	X01-24 : librt for shm_open on glibc older than 2.34.
+#		03-NOV-2026	RRL	X01-24ECO1 : the .deb by
+#					CPack (cpack -G DEB), built by .github/workflows/release.yml.
 #
 #---
 
@@ -406,6 +408,26 @@ add_custom_target(dist
 	COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/kit
 	COMMENT "Making ${MH_KIT}.tar.gz of the committed sources (git archive HEAD)"
 	VERBATIM)
+
+#
+#	The .deb package: 'cpack -G DEB' in the build directory, built by
+#	.github/workflows/release.yml.  The files go where the install step
+#	puts them (/opt/mscphub, /etc/mscphub, /lib/systemd/system), hence
+#	CPACK_SET_DESTDIR.  The unit is installed, never enabled.
+#
+set(CPACK_GENERATOR			"DEB")
+set(CPACK_PACKAGE_NAME			"mscphub")
+set(CPACK_PACKAGE_VENDOR		"StarLet Squad")
+set(CPACK_PACKAGE_CONTACT		"Ruslan R. Laishev <zator@yandex.ru>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY	"MSCP disk server for OpenVMS nodes, over NISCA")
+set(CPACK_SET_DESTDIR			ON)
+set(CPACK_PACKAGING_INSTALL_PREFIX	"${CMAKE_INSTALL_PREFIX}")
+set(CPACK_DEBIAN_FILE_NAME		DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_RELEASE	1)
+set(CPACK_DEBIAN_PACKAGE_SECTION	"net")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE	"https://github.com/SysMan-One/MSCP-Hub")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS	ON)
+include(CPack)
 
 if ( BUILD_TESTING )
 	enable_testing()
