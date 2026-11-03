@@ -380,28 +380,44 @@ int			l_fd, l_ok;
 	close(l_fd);
 
 	/*
-	**  Group commit: 24 WRITEs at once, a few fdatasync for all of them
+	**  Group commit: 24 WRITEs at once, a few fdatasync for all of them.
+	**  The data and the counters must be right every time; that the writes
+	**  were grouped depends on the speed of the file system - a fdatasync
+	**  that returns at once (a RAM disk, a container) leaves nothing to
+	**  group - so it must happen in one of 5 attempts.
 	*/
-	s_given = 0;
-	memcpy(s_want, s_img, T$K_IMGSZ);
+	unsigned	l_try, l_n0, l_w0;
 
-	for ( unsigned i = 0; i < 24; i++ )
+	l_ok = 1;
+	l_n = 24;
+
+	for ( l_try = 0; l_try < 5 && l_ok && l_n >= 24; l_try++ )
 		{
-		memset(l_buf[i], (int) (0xA0 + i), 4096);
-		s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
+		s_given = 0;
+		memcpy(s_want, s_img, T$K_IMGSZ);
+		l_n0 = (unsigned) s_d512.nsync;
+		l_w0 = (unsigned) s_d512.nsyncw;
+
+		for ( unsigned i = 0; i < 24; i++ )
+			{
+			memset(l_buf[i], (int) (0xA0 + i), 4096);
+			s_t$submit(&s_req[i], &s_d512, MH$K_BK_WRITE, MH$K_SYNC_GROUP, 65536 + i * 4096, 4096, l_buf[i]);
+			}
+
+		l_ok = s_t$wait(&s_port, 24);
+		l_fd = open(l_img, O_RDONLY);
+
+		for ( unsigned i = 0; i < 24; i++ )
+			l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
+
+		close(l_fd);
+		l_n = (unsigned) s_d512.nsync - l_n0;
+		l_ok = l_ok && ((unsigned) s_d512.nsyncw - l_w0 == 24) && (l_n >= 1);
 		}
 
-	l_ok = s_t$wait(&s_port, 24);
-	l_fd = open(l_img, O_RDONLY);
-
-	for ( unsigned i = 0; i < 24; i++ )
-		l_ok = l_ok && !s_req[i].err && (4096 == pread(l_fd, s_got, 4096, 65536 + i * 4096)) && !memcmp(s_got, l_buf[i], 4096);
-
-	close(l_fd);
-	l_n = (unsigned) s_d512.nsync;
-	$CHECK(l_ok && (s_d512.nsyncw == 24) && (l_n >= 1) && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
+	$CHECK(l_ok && (l_n < 24) && !s_d512.gbusy && !s_d512.gpend && !s_d512.ginfl,
 		"GROUP: 24 WRITEs, every one on the file, fewer fdatasync than writes");
-	printf("T_BK: group commit - %u fdatasync for 24 writes\n", l_n);
+	printf("T_BK: group commit - %u fdatasync for 24 writes (attempt %u)\n", l_n, l_try);
 
 	/*
 	**  A file: O_DIRECT if its file system takes it.  A byte count not a
