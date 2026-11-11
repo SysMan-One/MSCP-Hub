@@ -1,5 +1,7 @@
 # MSCPHUB
 
+[![CI](https://github.com/SysMan-One/MSCP-Hub/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/SysMan-One/MSCP-Hub/actions/workflows/ci.yml)
+
 MSCP disk server for OpenVMS nodes, running on Linux.
 
 MSCPHUB lets OpenVMS nodes on the same LAN use Linux files and block devices as
@@ -67,6 +69,24 @@ Actions (`.github/workflows/release.yml`).  The 15 regression tests were run on
 aarch64 on 3-NOV-2026: on Oracle Linux 9 on a Neoverse-N1 (Oracle Cloud, 2 vCPU,
 kernel 6.12) and on a Cortex-A72 board with Ubuntu 20.04 (glibc 2.31, kernel
 5.10); all pass.
+
+## Checking a download
+
+From the release after vX01-24ECO2 on, a release carries `SHA256SUMS.minisig`, a
+[minisign](https://jedisct1.github.io/minisign/) signature of `SHA256SUMS`: one
+signature for every package and the sources tarball. The public key is in
+`minisign.pub` here (the same key signs the AlphaEmu kits):
+
+    RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14
+
+Put the files you took next to `SHA256SUMS` and `SHA256SUMS.minisig`, then:
+
+    minisign -Vm SHA256SUMS -P RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14
+    sha256sum -c --ignore-missing SHA256SUMS
+
+The first must say `Signature and comment signature verified`, the second `OK` for
+every file. Anything else - the file is not the one released: do not install it.
+Releases up to vX01-24ECO2 have `SHA256SUMS` only.
 
 ## Run
 

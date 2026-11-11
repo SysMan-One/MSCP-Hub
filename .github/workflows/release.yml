@@ -21,6 +21,10 @@
 #
 #	03-NOV-2026	RRL	The container runs with seccomp=unconfined (io_uring); a failed ctest is
 #			reported as annotations.
+#
+#	10-NOV-2026	CLD	SHA256SUMS is signed with minisign (secret MINISIGN_KEY, no secret - the
+#			job fails), checked with minisign.pub of the tree; SHA256SUMS.minisig is
+#			attached to the Release.
 #--
 
 name: release
@@ -157,10 +161,8 @@ jobs:
           pattern: 'deb-*'
           merge-multiple: true
 
-      - name: Attach the packages to the Release
+      - name: Make the files of the Release
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           ident=$(sed -n 's/^#define[[:space:]]*__IDENT__[[:space:]]*"\(.*\)"/\1/p' src/src/mscphub.c)
@@ -177,10 +179,44 @@ jobs:
             -o "$PWD/MSCPHUB-$ident.tar.gz" HEAD
           ls -l *.deb *.pdf *.tar.gz
           sha256sum *.deb *.tar.gz > SHA256SUMS
+          echo "ident=$ident" >> "$GITHUB_ENV"
+          echo "rev=$rev" >> "$GITHUB_ENV"
+
+      #	The secret MINISIGN_KEY is the secret key of minisign.pub, whole text
+      #	(no password); it lives in the runner's temporary directory for this
+      #	step only.  The signature is checked with minisign.pub of the tree
+      #	before anything is published.
+      - name: Sign SHA256SUMS
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [ -z "${MINISIGN_KEY}" ]
+          then
+            echo "::error::no MINISIGN_KEY secret - the release would go out unsigned"
+            exit 1
+          fi
+          sudo apt-get update -q && sudo apt-get install -y -q minisign
+          key="${RUNNER_TEMP}/minisign.key"
+          trap 'rm -f "${key}"' EXIT
+          ( umask 077; printf '%s\n' "${MINISIGN_KEY}" > "${key}" )
+          minisign -S -s "${key}" -m SHA256SUMS \
+            -t "MSCPHUB ${TAG} SHA256SUMS signed $(date -u +%d-%b-%Y | tr a-z A-Z)"
+          # The key is pinned here, not read from src/: a re-run of an older tag has no minisign.pub.
+          minisign -Vm SHA256SUMS -P RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14
+
+      - name: Attach the packages to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS --clobber
+            gh release upload "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS SHA256SUMS.minisig --clobber
           else
-            gh release create "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS --title "MSCPHUB $ident" --notes-file - <<EOF
+            gh release create "$TAG" *.deb *.pdf *.tar.gz SHA256SUMS SHA256SUMS.minisig --title "MSCPHUB $ident" --notes-file - <<EOF
           MSCP disk server for OpenVMS nodes, over NISCA. The .deb for amd64 and arm64 is installed on Debian 12, Debian 13 and Ubuntu 24.04 (glibc >= 2.34 and liburing >= 2.3). Install: \`sudo apt install ./mscphub_${rev}-1_<arch>.deb\`. The files are in /opt/mscphub, the sample of the parameter file in /etc/mscphub; the systemd units are installed, never enabled.
+
+          To check a download (the .deb packages and the sources tarball; the PDF manuals are not in SHA256SUMS): \`minisign -Vm SHA256SUMS -P RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14\` (\`SHA256SUMS.minisig\` next to it), then \`sha256sum -c --ignore-missing SHA256SUMS\`.
           EOF
           fi

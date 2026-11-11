@@ -1,0 +1,79 @@
+#++
+#   DESCRIPTION: The build and the regression tests of MSCPHUB (amd64, arm64) on every push
+#
+#   AUTHOR: Ruslan R. Laishev (BMF, The BadAss SysMan)
+#
+#   CREATION DATE: 10-NOV-2026
+#
+#	A push to master, a pull request or a manual run (Actions -> ci -> Run workflow)
+#	builds MSCPHUB with StarLet and HELP of their repositories and runs its ctest on
+#	x86_64 and aarch64, in the container of the release (Debian 12, bookworm).  No
+#	package is made; the "CI" badge of README is the state of this workflow.
+#
+#	MODIFICATION HISTORY:
+#
+#	10-NOV-2026	CLD	Initial version, the build and the ctest of the deb job of release.yml.
+#--
+
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STARLET_REPO: "https://gitlab.com/SysMan-One/utility_routines.git"
+  HELP_REPO: "https://github.com/SysMan-One/vHELP.git"
+
+jobs:
+  test:
+    name: test ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: debian:bookworm
+      options: --init --security-opt seccomp=unconfined      # io_uring; --init: PID 1 reaps the stopped daemons (the test of init.sh)
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential cmake pkg-config \
+            liburing-dev git ca-certificates
+
+      - uses: actions/checkout@v5
+
+      - name: Build and install StarLet and HELP
+        run: |
+          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
+          cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/starlet/build -j "$(nproc)"
+          cmake --install /tmp/starlet/build
+          git clone --depth 1 "$HELP_REPO" /tmp/help
+          git -C /tmp/help log -1 --format='HELP: %H %cd'
+          cmake -S /tmp/help -B /tmp/help/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/help/build -j "$(nproc)"
+          cmake --install /tmp/help/build
+
+      - name: Build and test
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMH_SYSTEMD=ON
+          cmake --build build -j "$(nproc)"
+          cd build
+          ctest --output-on-failure --output-log ctest.log || {
+            rc=$?
+            # an annotation is visible without a token: the names and the tail of the failed tests
+            for t in $(sed 's/^[0-9]*://' Testing/Temporary/LastTestsFailed.log); do echo "::error::ctest FAILED: $t"; done
+            echo "::error::$(grep -v '^ *$' ctest.log | tail -n 25 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')"
+            exit $rc
+          }
