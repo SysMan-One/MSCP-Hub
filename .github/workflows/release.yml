@@ -36,6 +36,9 @@
 #	12-NOV-2026	CLD	StarLet and HELP are pinned commits of GitHub (STARLET_REF 7e910f8 = 1.7.2,
 #			VHELP_REF e7f90c4 = HELP X01-38), not HEAD; StarLet from GitHub, its main
 #			repository, not GitLab.
+#
+#	12-NOV-2026	CLD	A tag X.* must be X.aa-bb[ECOcc] with two digits in every field
+#			(X.01-24ECO3 is refused); the old vX* tags as they are.
 #--
 
 name: release
@@ -186,6 +189,8 @@ jobs:
           rev=$(sed -n 's/^#define[[:space:]]*__REV__[[:space:]]*"\(.*\)"/\1/p' src/src/mscphub.c)
           test -n "$ident" && test -n "$rev"
           # The tag is the IDENT (X.01-24ECO03); the releases up to X01-24ECO2 had a "v" before it
+          # A tag X.* is X.aa-bb[ECOcc] with two digits each (X.01-24ECO3 is refused); the older vX* as they are
+          case "$TAG" in X.*) [[ "$TAG" =~ ^X\.[0-9]{2}-[0-9]{2}(ECO[0-9]{2})?$ ]] || { echo "$TAG is not X.aa-bb[ECOcc]"; exit 1; };; esac
           test "$TAG" = "$ident" || test "$TAG" = "v$ident" || { echo "$TAG is not $ident"; exit 1; }
           for pkg in *.deb; do        # The package version is __REV__ of the head module
             case "$pkg" in mscphub_${rev}-*) ;; *) echo "$pkg does not match $rev"; exit 1;; esac

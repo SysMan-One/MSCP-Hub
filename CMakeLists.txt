@@ -30,6 +30,10 @@
 #		12-NOV-2026	CLD	X.01-24ECO03 : an IDENT may be X.aa-bb[ECOcc] (the form of
 #					the releases from now on, ECO of two digits) as well as
 #					Xaa-bb[ECOc] of the modules not changed since.
+#		12-NOV-2026	CLD	(after X.01-24ECO03, build only, no ident moved) : the form
+#					X.aa-bb[ECOcc] is checked strictly
+#					(two digits in every field, X.01-24ECO3 is refused); the
+#					older Xaa-bb[ECOc] as it was.
 #
 #---
 
@@ -43,6 +47,11 @@ cmake_minimum_required(VERSION 3.16)
 set(MH_HEADMOD "${CMAKE_CURRENT_SOURCE_DIR}/src/mscphub.c")
 
 file(STRINGS "${MH_HEADMOD}" MH_IDENTLINE REGEX "^#define[ \t]+__IDENT__")
+
+#	X.nn-nn[ECOnn] with two digits in every field and no others; the older Xnn-nn[ECOn] as it was
+if ( MH_IDENTLINE MATCHES "\"X\\." AND NOT MH_IDENTLINE MATCHES "\"X\\.[0-9][0-9]-[0-9][0-9](ECO[0-9][0-9])?\"" )
+	message(FATAL_ERROR "The __IDENT__ of ${MH_HEADMOD} is not of the form X.nn-nn[ECOnn] (two digits each)")
+endif()
 
 if ( NOT MH_IDENTLINE MATCHES "\"(X\\.?0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?)\"" )
 	message(FATAL_ERROR "No __IDENT__ of the form X.nn-nn[ECOnn] in ${MH_HEADMOD}")
@@ -94,6 +103,12 @@ function(s_mh_check_ident)
 		endif()
 
 		set(L_R "${CMAKE_MATCH_1}")
+
+		#	X.nn-nn[ECOnn]: two digits in every field and no others (X.01-24ECO3
+		#	and X.01-24ECO003 are refused); the older Xnn-nn[ECOn] as it was
+		if ( L_I MATCHES "^X\\." AND NOT L_I MATCHES "^X\\.[0-9][0-9]-[0-9][0-9](ECO[0-9][0-9])?$" )
+			message(FATAL_ERROR "${F}: __IDENT__ \"${L_I}\" is not of the form X.nn-nn[ECOnn] (two digits each)")
+		endif()
 
 		if ( NOT L_I MATCHES "^X\\.?0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?$" )
 			message(FATAL_ERROR "${F}: __IDENT__ \"${L_I}\" is not of the form X.nn-nn[ECOnn]")
