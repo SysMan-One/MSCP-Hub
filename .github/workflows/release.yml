@@ -39,6 +39,8 @@
 #
 #	12-NOV-2026	CLD	A tag X.* must be X.aa-bb[ECOcc] with two digits in every field
 #			(X.01-24ECO3 is refused); the old vX* tags as they are.
+#
+#	12-NOV-2026	CLD	VHELP_REF 9f89cd6 = HELP X.01-38ECO01 (was e7f90c4, X01-38).
 #--
 
 name: release
@@ -61,7 +63,7 @@ env:
   STARLET_REPO: "https://github.com/SysMan-One/utility_routines.git"
   STARLET_REF: "7e910f809db2932c0a39904280322eb1eedef9d8"     # StarLet 1.7.2
   HELP_REPO: "https://github.com/SysMan-One/vHELP.git"
-  VHELP_REF: "e7f90c4be659dec6fa5996520ea0ea827ca0b689"        # HELP X01-38 (mdparse.c X01-02)
+  VHELP_REF: "9f89cd6277a4d785978aa8e9202d4782e7dce5e5"        # HELP X.01-38ECO01
 
 jobs:
   deb:
