@@ -13,6 +13,10 @@
 #	MODIFICATION HISTORY:
 #
 #	10-NOV-2026	CLD	Initial version, the build and the ctest of the deb job of release.yml.
+#
+#	12-NOV-2026	CLD	StarLet and HELP are pinned commits of GitHub (STARLET_REF 7e910f8 = 1.7.2,
+#			VHELP_REF e7f90c4 = HELP X01-38), not HEAD; StarLet from GitHub, its main
+#			repository, not GitLab.
 #--
 
 name: ci
@@ -27,8 +31,11 @@ permissions:
   contents: read
 
 env:
-  STARLET_REPO: "https://gitlab.com/SysMan-One/utility_routines.git"
+  #	The pinned commits of StarLet and HELP - moved by hand, after a check
+  STARLET_REPO: "https://github.com/SysMan-One/utility_routines.git"
+  STARLET_REF: "7e910f809db2932c0a39904280322eb1eedef9d8"     # StarLet 1.7.2
   HELP_REPO: "https://github.com/SysMan-One/vHELP.git"
+  VHELP_REF: "e7f90c4be659dec6fa5996520ea0ea827ca0b689"        # HELP X01-38 (mdparse.c X01-02)
 
 jobs:
   test:
@@ -54,12 +61,15 @@ jobs:
 
       - name: Build and install StarLet and HELP
         run: |
-          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          fetch () {      # $1 - the directory, $2 - the repository, $3 - the pinned commit
+            git init -q "$1" && git -C "$1" fetch -q --depth 1 "$2" "$3" && git -C "$1" checkout -q FETCH_HEAD
+          }
+          fetch /tmp/starlet "$STARLET_REPO" "$STARLET_REF"
           git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
           cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/starlet/build -j "$(nproc)"
           cmake --install /tmp/starlet/build
-          git clone --depth 1 "$HELP_REPO" /tmp/help
+          fetch /tmp/help "$HELP_REPO" "$VHELP_REF"
           git -C /tmp/help log -1 --format='HELP: %H %cd'
           cmake -S /tmp/help -B /tmp/help/build -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/help/build -j "$(nproc)"
