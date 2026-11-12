@@ -2241,7 +2241,7 @@ The map has a version in register 0. A change of the map raises it.
 
 | Register | Size | Contents |
 |---|---|---|
-| 0 | 1 | Version of the map: 1 |
+| 0 | 1 | Version of the map: 2 |
 | 1 | 1 | Number of disks |
 | 2 | 1 | Number of nodes the server knows |
 | 3 | 1 | /SYSTEMID |
@@ -2250,9 +2250,10 @@ The map has a version in register 0. A change of the map raises it.
 | 6 | 1 | /SYNC: 0 DSYNC, 1 GROUP, 2 NONE |
 | 7 | 1 | /ACK: 0 FLUSH, 1 HOLD |
 | 8 | 2 | Seconds since the server started |
-| 10 | 4 | Version of the server, text: X01-21 |
+| 10 | 4 | Version of the server, text, its first 8 characters: X.01-24E (in map 1 at most 7) |
 | 14 | 4 | /NODE, text |
 | 18 | 8 | /INTERFACE, text |
+| 26 | 8 | Version of the server, text, whole: X.01-24ECO03 |
 | 100 | 4 | Frames received |
 | 104 | 4 | Frames sent |
 | 108 | 4 | Octets received |
@@ -2328,4 +2329,4 @@ The function 2B/0E answers the basic objects:
 |---|---|---|
 | 0 | VendorName | StarLet Squad |
 | 1 | ProductCode | MSCPHUB |
-| 2 | MajorMinorRevision | X01-21 |
+| 2 | MajorMinorRevision | the version of the server, whole: X.01-24ECO03 |

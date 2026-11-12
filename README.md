@@ -72,7 +72,7 @@ kernel 6.12) and on a Cortex-A72 board with Ubuntu 20.04 (glibc 2.31, kernel
 
 ## Checking a download
 
-From the release after vX01-24ECO2 on, a release carries `SHA256SUMS.minisig`, a
+From X.01-24ECO03 on, a release carries `SHA256SUMS.minisig`, a
 [minisign](https://jedisct1.github.io/minisign/) signature of `SHA256SUMS`: one
 signature for every package and the sources tarball. The public key is in
 `minisign.pub` here (the same key signs the AlphaEmu kits):
@@ -86,7 +86,8 @@ Put the files you took next to `SHA256SUMS` and `SHA256SUMS.minisig`, then:
 
 The first must say `Signature and comment signature verified`, the second `OK` for
 every file. Anything else - the file is not the one released: do not install it.
-Releases up to vX01-24ECO2 have `SHA256SUMS` only.
+Releases up to vX01-24ECO2 have `SHA256SUMS` only. From X.01-24ECO03 on, the tag of a
+release is its IDENT itself, with no `v`.
 
 ## Run
 

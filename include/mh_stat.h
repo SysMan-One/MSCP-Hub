@@ -40,6 +40,8 @@
 **
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
 **		25-OCT-2026	RRL	X01-21 : SOLICIT_DLY, START_SENT: new values, the layout is the same.
+**		12-NOV-2026	CLD	X.01-24ECO03 : IDENT of 16 octets (X.01-24ECO03 did not fit in 8);
+**						the layout changes - MH$K_STAT_VERSION 2.
 **
 **--
 */
@@ -49,17 +51,17 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-17"
+#define	__IDENT__	"X.01-24ECO03"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.17.0"
+#define	__REV__		"1.24.3"
 #endif
 
 #include	<stdint.h>
 
 #define	MH$T_STAT_MAGIC		"MSCPHUB"	/* 8 octets with the NUL			*/
-#define	MH$K_STAT_VERSION	1
+#define	MH$K_STAT_VERSION	2		/* 2 - X.01-24ECO03: IDENT of 16 octets	*/
 #define	MH$T_STAT_PREFIX	"/mscphub."	/* + the SCSNODE: the name of the object	*/
 #define	MH$T_STAT_SHMDIR	"/dev/shm"	/* Where Linux keeps the objects		*/
 #define	MH$K_STAT_MODE		0640
@@ -156,7 +158,7 @@ typedef struct mh_stat_t {
 	uint64_t	tick;			/* ... the tick of the server			*/
 	uint64_t	qticks;			/* Ticks the queues of the units are summed over	*/
 
-	char		ident [8];		/* X01-17					*/
+	char		ident [16];		/* X.01-24ECO03, ASCIZ				*/
 	char		node [8];		/* SCSNODE					*/
 	char		ifname [16];
 	uint16_t	sysid;

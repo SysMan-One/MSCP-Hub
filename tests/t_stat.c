@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_STAT"
-#define	__IDENT__	"X01-17"
-#define	__REV__		"1.17.0"
+#define	__IDENT__	"X.01-24ECO03"
+#define	__REV__		"1.24.3"
 
 /*
 **++
@@ -27,6 +27,9 @@
 **  MODIFICATION HISTORY:
 **
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
+**		12-NOV-2026	CLD	X.01-24ECO03 : an IDENT of 12 characters, whole in the block
+**						and in the registers 26 ... 33; the map is 2; an interface
+**						name of 15 characters, whole in 18 ... 25; 2B/0E object 2.
 **
 **--
 */
@@ -83,7 +86,7 @@ char	l_node [8];
 	$ASCLEN(&s_cfg.node) = (unsigned char) strlen(l_node);
 	memcpy($ASCPTR(&s_cfg.node), l_node, strlen(l_node) + 1);
 
-	strcpy(s_port.ifname, "lo");
+	strcpy(s_port.ifname, "enx001122334455");	/* 15 characters: the whole of 18 ... 25	*/
 	s_port.sysid	= 4321;
 	s_port.group	= 77;
 	s_port.alloclass = 42;
@@ -192,11 +195,11 @@ uint64_t	l_qint;
 	/*
 	**  Made, with its mode, and whole at once
 	*/
-	$CHECK(1 & mh$stat_open(&s_port, &s_cfg, "X01-17"), "the block is made");
+	$CHECK(1 & mh$stat_open(&s_port, &s_cfg, "X.01-24ECO03"), "the block is made");
 	snprintf(l_path, sizeof(l_path), MH$T_STAT_SHMDIR MH$T_STAT_PREFIX "%s", $ASCPTR(&s_cfg.node));
 	$CHECK(!stat(l_path, &l_st) && ((l_st.st_mode & 0777) == MH$K_STAT_MODE), "/dev/shm/mscphub.<node>, mode 0640");
 	$CHECK(1 & mh$stat_read(mh$stat_block(), &l_copy), "a whole copy");
-	$CHECK(!strcmp(l_copy.node, $ASCPTR(&s_cfg.node)) && !strcmp(l_copy.ident, "X01-17") && (l_copy.sysid == 4321),
+	$CHECK(!strcmp(l_copy.node, $ASCPTR(&s_cfg.node)) && !strcmp(l_copy.ident, "X.01-24ECO03") && (l_copy.sysid == 4321),
 		"who the server is");
 	$CHECK((l_copy.nunit == 1) && !strcmp(l_copy.units[0].dvname, "$42$DKA100") && (l_copy.units[0].size == 2048), "the unit");
 	$CHECK((l_copy.nnode == 1) && !strcmp(l_copy.nodes[0].name, "ALPHA1") && (l_copy.nodes[0].chstate == MH$K_STCH_OPEN)
@@ -284,9 +287,14 @@ uint64_t	l_qint;
 	memcpy(l_pdu, (uint8_t []) { 0x04, 0x00, 0x00, 0x00, 0x12 }, 5);
 	mh$mbus_answer(l_pdu, 5, &l_rlen);
 	$CHECK((l_rlen == 2 + 36) && (l_pdu[1] == 36), "FC04: 18 registers");
-	$CHECK((l_pdu[2] == 0) && (l_pdu[3] == 1) && (l_pdu[5] == 1) && (l_pdu[7] == 1), "map 1, one unit, one node");
+	$CHECK((l_pdu[2] == 0) && (l_pdu[3] == 2) && (l_pdu[5] == 1) && (l_pdu[7] == 1), "map 2, one unit, one node");
 	$CHECK(((l_pdu[8] << 8) | l_pdu[9]) == 4321, "the system ID");
-	$CHECK(!memcmp(l_pdu + 2 + 2 * 10, "X01-17", 6), "the IDENT, two characters a register");
+	$CHECK(!memcmp(l_pdu + 2 + 2 * 10, "X.01-24E", 8), "the first 8 characters of the IDENT, two a register");
+
+	memcpy(l_pdu, (uint8_t []) { 0x04, 0x00, 0x12, 0x00, 0x10 }, 5);
+	mh$mbus_answer(l_pdu, 5, &l_rlen);
+	$CHECK((l_rlen == 2 + 32) && !memcmp(l_pdu + 2, "enx001122334455\0", 16), "at 18: the whole interface name");
+	$CHECK(!memcmp(l_pdu + 2 + 16, "X.01-24ECO03\0\0\0\0", 16), "at 26: the whole IDENT");
 
 	memcpy(l_pdu, (uint8_t []) { 0x03, 0x03, 0xE8, 0x00, 0x08 }, 5);
 	mh$mbus_answer(l_pdu, 5, &l_rlen);
@@ -315,6 +323,8 @@ uint64_t	l_qint;
 	memcpy(l_pdu, (uint8_t []) { 0x2B, 0x0E, 0x01, 0x00 }, 4);
 	mh$mbus_answer(l_pdu, 4, &l_rlen);
 	$CHECK((l_pdu[6] == 3) && !memcmp(l_pdu + 9, "StarLet Squad", 13), "2B/0E: three objects, the vendor first");
+	$CHECK((l_pdu[31] == 2) && (l_pdu[32] == 12) && !memcmp(l_pdu + 33, "X.01-24ECO03", 12) && (l_rlen == 45),
+		"2B/0E: object 2 is the IDENT of the product");
 
 	/*
 	**  Removed

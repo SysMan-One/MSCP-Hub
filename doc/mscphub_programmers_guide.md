@@ -611,11 +611,13 @@ history carries `RRL` between the date and the IDENT.
 
 ## 5.4 IDENT and REV
 
-`__IDENT__` is the version in the OpenVMS manner: `X`*aa*`-`*bb*, and `X`*aa*`-`*bb*`ECO`*cc* for a
-small correction of a fault, which does not raise *bb*. `__REV__` is the same version in the Unix
-manner, derived from it part for part: `X01-15` gives `1.15.0`, `X01-11ECO1` gives `1.11.1`. The two
-are kept together with care; CMake refuses to configure a tree in which a module's `__REV__` does not
-follow its `__IDENT__`.
+`__IDENT__` is the version in the OpenVMS manner: `X.`*aa*`-`*bb*, and `X.`*aa*`-`*bb*`ECO`*cc* for a
+small correction of a fault, which does not raise *bb*; *cc* is always of two digits. `__REV__` is the
+same version in the Unix manner, derived from it part for part: `X.01-24` gives `1.24.0`,
+`X.01-24ECO03` gives `1.24.3`. The modules not changed since X01-24ECO2 keep the older form without the
+dot (`X01-11ECO1` gives `1.11.1`); CMake takes both. The two are kept together with care; CMake refuses
+to configure a tree in which a module's `__REV__` does not follow its `__IDENT__`. The tag of a release
+is the IDENT of the product itself: `X.01-24ECO03`.
 
 A module carries the IDENT of the last version that changed it. The IDENT of the product is that of
 the head module, `mscphub.c`, and nowhere else is it taken from.

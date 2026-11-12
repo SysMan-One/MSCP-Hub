@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMBUS"
-#define	__IDENT__	"X01-17"
-#define	__REV__		"1.17.0"
+#define	__IDENT__	"X.01-24ECO03"
+#define	__REV__		"1.24.3"
 
 /*
 **++
@@ -50,6 +50,11 @@
 **  MODIFICATION HISTORY:
 **
 **		22-OCT-2026	RRL	X01-17 : Initial revision.
+**		12-NOV-2026	CLD	X.01-24ECO03 : the whole IDENT of the server in the registers
+**						26 ... 33 (16 octets; /INTERFACE is 18 ... 25); 10 ... 13
+**						keep its first 8 as before.  MH$K_MB_MAPVERS 2.  2B/0E
+**						object 2 is the IDENT of the product (of the block), not
+**						the one of this module.
 **
 **--
 */
@@ -88,7 +93,7 @@
 #define	MODBUS$K_EXC_FAIL	0x04		/* SERVER DEVICE FAILURE: no block		*/
 
 #define	MH$K_MB_CLIENTS		8		/* Clients at a time				*/
-#define	MH$K_MB_MAPVERS		1		/* Register 0: the version of the map		*/
+#define	MH$K_MB_MAPVERS		2		/* Register 0: the version of the map		*/
 #define	MH$K_MB_UNIT0		1000		/* Unit n at 1000 + 100 * n			*/
 #define	MH$K_MB_UNITSZ		100
 #define	MH$K_MB_NODE0		2000		/* Node n at 2000 + 50 * n			*/
@@ -190,6 +195,7 @@ const	MH$STAT	*l_st = &s_copy;
 	s_mh$mb_puttxt(10, l_st->ident, 4);
 	s_mh$mb_puttxt(14, l_st->node, 4);
 	s_mh$mb_puttxt(18, l_st->ifname, 8);
+	s_mh$mb_puttxt(26, l_st->ident, 8);	/* The whole IDENT; 10 ... 13 hold its first 8 octets	*/
 
 	s_mh$mb_put64(100, l_st->rx_frames);
 	s_mh$mb_put64(104, l_st->tx_frames);
@@ -292,7 +298,8 @@ int	mh$mbus_answer	(
 const	MH$STAT	*l_blk = mh$stat_block();
 uint8_t		l_fc = a_pdu[0], l_exc = 0;
 unsigned	l_start, l_qty;
-static	const char	*s_obj [3] = { "StarLet Squad", "MSCPHUB", __IDENT__ };
+const	char	*l_obj [3] = { "StarLet Squad", "MSCPHUB",		/* MajorMinorRevision - of the product	*/
+			(l_blk && l_blk->ident[0]) ? l_blk->ident : __IDENT__ };
 
 	switch ( l_fc )
 		{
@@ -357,11 +364,11 @@ static	const char	*s_obj [3] = { "StarLet Squad", "MSCPHUB", __IDENT__ };
 
 			for ( uint8_t i = 0; i < 3; i++ )
 				{
-				uint8_t	l_olen = (uint8_t) strlen(s_obj[i]);
+				uint8_t	l_olen = (uint8_t) strnlen(l_obj[i], sizeof(l_blk->ident));
 
 				a_pdu[(*a_rlen)++] = i;
 				a_pdu[(*a_rlen)++] = l_olen;
-				memcpy(a_pdu + *a_rlen, s_obj[i], l_olen);
+				memcpy(a_pdu + *a_rlen, l_obj[i], l_olen);
 				*a_rlen += l_olen;
 				}
 

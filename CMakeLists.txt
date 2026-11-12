@@ -27,6 +27,9 @@
 #		03-NOV-2026	RRL	X01-24 : librt for shm_open on glibc older than 2.34.
 #		03-NOV-2026	RRL	X01-24ECO1 : the .deb by
 #					CPack (cpack -G DEB), built by .github/workflows/release.yml.
+#		12-NOV-2026	CLD	X.01-24ECO03 : an IDENT may be X.aa-bb[ECOcc] (the form of
+#					the releases from now on, ECO of two digits) as well as
+#					Xaa-bb[ECOc] of the modules not changed since.
 #
 #---
 
@@ -35,14 +38,14 @@ cmake_minimum_required(VERSION 3.16)
 #
 #	The identification of the product is the one of its head module: it is
 #	read before PROJECT(), so that the version of the project is made of it
-#	and cannot fall behind - X01-08 is 1.8.0
+#	and cannot fall behind - X01-08 is 1.8.0, X.01-24ECO03 is 1.24.3
 #
 set(MH_HEADMOD "${CMAKE_CURRENT_SOURCE_DIR}/src/mscphub.c")
 
 file(STRINGS "${MH_HEADMOD}" MH_IDENTLINE REGEX "^#define[ \t]+__IDENT__")
 
-if ( NOT MH_IDENTLINE MATCHES "\"(X0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?)\"" )
-	message(FATAL_ERROR "No __IDENT__ of the form Xnn-nn[ECOnn] in ${MH_HEADMOD}")
+if ( NOT MH_IDENTLINE MATCHES "\"(X\\.?0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?)\"" )
+	message(FATAL_ERROR "No __IDENT__ of the form X.nn-nn[ECOnn] in ${MH_HEADMOD}")
 endif()
 
 set(MH_IDENT "${CMAKE_MATCH_1}")
@@ -73,7 +76,7 @@ include(GNUInstallDirs)
 set(CMAKE_INSTALL_DOCDIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/mscphub")
 
 #
-#	__REV__ of every module must follow its __IDENT__: Xaa-bb[ECOcc] -> aa.bb.cc
+#	__REV__ of every module must follow its __IDENT__: X.aa-bb[ECOcc] (or Xaa-bb[ECOcc]) -> aa.bb.cc
 #
 function(s_mh_check_ident)
 	foreach ( F ${ARGN} )
@@ -92,8 +95,8 @@ function(s_mh_check_ident)
 
 		set(L_R "${CMAKE_MATCH_1}")
 
-		if ( NOT L_I MATCHES "^X0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?$" )
-			message(FATAL_ERROR "${F}: __IDENT__ \"${L_I}\" is not of the form Xnn-nn[ECOnn]")
+		if ( NOT L_I MATCHES "^X\\.?0*([0-9]+)-0*([0-9]+)(ECO0*([0-9]+))?$" )
+			message(FATAL_ERROR "${F}: __IDENT__ \"${L_I}\" is not of the form X.nn-nn[ECOnn]")
 		endif()
 
 		set(L_MAJ "${CMAKE_MATCH_1}")

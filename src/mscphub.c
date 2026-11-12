@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X01-24ECO2"
-#define	__REV__		"1.24.2"
+#define	__IDENT__	"X.01-24ECO03"
+#define	__REV__		"1.24.3"
 
 /*
 **++
@@ -82,6 +82,9 @@
 **						for amd64 and arm64 on a tag.
 **		03-NOV-2026	RRL	X01-24ECO2 : the workflow in a container with --init and seccomp=unconfined;
 **						T_BK: the group commit test is steady on a fast file system.
+**		12-NOV-2026	CLD	X.01-24ECO03 : the IDENT in the form X.aa-bbECOcc, the ECO of two
+**						digits; the release is signed (SHA256SUMS.minisig), StarLet and
+**						HELP of the build are pinned commits.
 **
 **--
 */
