@@ -41,6 +41,8 @@
 #			(X.01-24ECO3 is refused); the old vX* tags as they are.
 #
 #	12-NOV-2026	CLD	VHELP_REF 9f89cd6 = HELP X.01-38ECO01 (was e7f90c4, X01-38).
+#
+#	12-NOV-2026	CLD	STARLET_REF fde1672 = StarLet 1.7.3 (was 7e910f8, 1.7.2).
 #--
 
 name: release
@@ -61,7 +63,7 @@ permissions:
 env:
   #	The pinned commits of StarLet and HELP - moved by hand, after a check
   STARLET_REPO: "https://github.com/SysMan-One/utility_routines.git"
-  STARLET_REF: "7e910f809db2932c0a39904280322eb1eedef9d8"     # StarLet 1.7.2
+  STARLET_REF: "fde1672f770155df542b8b909fa3b9470f642044"     # StarLet 1.7.3
   HELP_REPO: "https://github.com/SysMan-One/vHELP.git"
   VHELP_REF: "9f89cd6277a4d785978aa8e9202d4782e7dce5e5"        # HELP X.01-38ECO01
 
