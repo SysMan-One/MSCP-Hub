@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMOP"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -58,6 +58,9 @@
 **  MODIFICATION HISTORY:
 **
 **		25-OCT-2026	RRL	X01-22 : Initial version.
+**		24-NOV-2026	CLD	X.01-25 : IP= of /SATELLITEn: an I64 satellite, loaded by
+**					MHTFTP; MOP does not answer it.  /PASSIVE answers no
+**					console either (it sends nothing at all).
 **
 **--
 */
@@ -198,16 +201,57 @@ char	l_hex [2 * NISCA$K_SZ_MAC];
 
 
 
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Take the IPv4 address of IP=: a.b.c.d.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_str		The text, ASCIZ
+**	a_ip		Output: the address, host order
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; STS$K_ERROR - not an address.
+**--
+*/
+static	int	s_mh$mop_ip	(
+	const	char *		a_str,
+		uint32_t *	a_ip
+			)
+{
+unsigned	l_b [4];
+char		l_c;
+
+	if ( (strspn(a_str, "0123456789.") != strlen(a_str)) || (4 != sscanf(a_str, "%3u.%3u.%3u.%3u%c", &l_b[0], &l_b[1], &l_b[2], &l_b[3], &l_c))
+		|| (a_str[0] == '.') )
+		return	STS$K_ERROR;
+
+	for ( unsigned i = 0; i < 4; i++ )
+		if ( l_b[i] > 255 )
+			return	STS$K_ERROR;
+
+	*a_ip = (l_b[0] << 24) | (l_b[1] << 16) | (l_b[2] << 8) | l_b[3];
+
+	return	*a_ip ? STS$K_SUCCESS : STS$K_ERROR;
+}
+
+
+
 /*
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
 **	Take the satellites of /SATELLITE0 ... /SATELLITE7: the adapter of a
 **	satellite, the unit of its system disk, its root, and the size of
-**	the MEMORY LOADs, e.g.
+**	the MEMORY LOADs - or, for an I64 satellite, the address BOOTP gives
+**	it (MHTFTP loads it, MOP does not), e.g.
 **
 **	    /SATELLITE0=08-00-2B-E5-43-01,DKA100,SYS10
 **	    /SATELLITE1=08-00-2B-E5-43-02,DKA100,SYS11,SIZE=1024
+**	    /SATELLITE2=08-00-2B-E5-44-10,DKA0,SYS10,IP=192.168.42.10
 **
 **	The unit must be one of the server, writable (a system disk); the
 **	root may be written <SYS10.> or [SYS10.] as for LANCP.
@@ -251,7 +295,7 @@ long		l_size;
 		l_spec[$ASCLEN(&a_cfg->sat[i])] = '\0';
 
 		/*
-		**  mac,unit,root[,SIZE=n]
+		**  mac,unit,root[,SIZE=n | ,IP=a.b.c.d]
 		*/
 		l_nf = 0;
 
@@ -264,7 +308,7 @@ long		l_size;
 			}
 
 		if ( (l_nf < 3) || l_p )
-			return	$MHMSG(MH$_IVPARAM, $ASCPTR(&a_cfg->sat[i]), l_what, "mac,unit,root[,SIZE=n] is expected");
+			return	$MHMSG(MH$_IVPARAM, $ASCPTR(&a_cfg->sat[i]), l_what, "mac,unit,root[,SIZE=n | ,IP=a.b.c.d] is expected");
 
 		l_sat = &a_port->sats[a_port->nsat];
 		memset(l_sat, 0, sizeof(*l_sat));
@@ -313,11 +357,20 @@ long		l_size;
 
 		l_sat->size = MH$K_MOP_DEFSIZE;
 
-		if ( l_nf > 3 )
+		if ( (l_nf > 3) && !strncasecmp(l_f[3], "IP=", 3) )
+			{
+			/*
+			**  An I64 satellite: MHTFTP checks the address against
+			**  /IPADDRESS and tells it
+			*/
+			if ( !(1 & s_mh$mop_ip(l_f[3] + 3, &l_sat->ip)) )
+				return	$MHMSG(MH$_IVPARAM, l_f[3], l_what, "IP=a.b.c.d, the address of the satellite, is expected");
+			}
+		else if ( l_nf > 3 )
 			{
 			if ( strncasecmp(l_f[3], "SIZE=", 5) || ((l_size = strtol(l_f[3] + 5, &l_p, 10)), *l_p)
 				|| (l_size < MH$K_MOP_MINSIZE) || (l_size > MH$K_MOP_DEFSIZE) )
-				return	$MHMSG(MH$_IVPARAM, l_f[3], l_what, "SIZE=246 - 1482 is expected");
+				return	$MHMSG(MH$_IVPARAM, l_f[3], l_what, "SIZE=246 - 1482 or IP=a.b.c.d is expected");
 
 			l_sat->size = (unsigned) l_size;
 			}
@@ -326,7 +379,8 @@ long		l_size;
 		snprintf(l_sat->name, sizeof(l_sat->name), "?");
 		a_port->nsat++;
 
-		$MHMSG(MH$_SATCFG, l_mac, a_port->units[l_sat->unit].dvname, l_sat->root, l_sat->size);
+		if ( !l_sat->ip )
+			$MHMSG(MH$_SATCFG, l_mac, a_port->units[l_sat->unit].dvname, l_sat->root, l_sat->size);
 		}
 
 	return	STS$K_SUCCESS;
@@ -1027,6 +1081,12 @@ unsigned	l_mlen;
 int		l_mcast;
 MH$MOPSAT	*l_sat = NULL;
 
+	/*
+	**  /PASSIVE sends nothing at all, a MOP answer neither
+	*/
+	if ( a_port->passive )
+		return	STS$K_SUCCESS;
+
 	if ( a_fmt == MH$K_MOP_V3 )
 		{
 		if ( (a_len < 17) || (((a_frame[12] << 8) | a_frame[13]) != MH$K_MOP_ETHERTYPE) )
@@ -1061,7 +1121,7 @@ MH$MOPSAT	*l_sat = NULL;
 	a_port->mop_rx++;
 
 	for ( unsigned i = 0; i < a_port->nsat; i++ )
-		if ( !memcmp(a_port->sats[i].mac, a_frame + NISCA$K_SZ_MAC, NISCA$K_SZ_MAC) )
+		if ( !a_port->sats[i].ip && !memcmp(a_port->sats[i].mac, a_frame + NISCA$K_SZ_MAC, NISCA$K_SZ_MAC) )
 			{
 			l_sat = &a_port->sats[i];
 			break;
@@ -1179,6 +1239,9 @@ int	l_status = STS$K_SUCCESS;
 	for ( unsigned i = 0; i < a_port->nsat; i++ )
 		{
 		const	MH$MOPSAT *l_sat = &a_port->sats[i];
+
+		if ( l_sat->ip )
+			continue;
 
 		mh$mac2str(l_sat->mac, l_mac, sizeof(l_mac));
 		l_status = $MHMSG(MH$_MOPSTATS, l_mac, l_sat->name, s_state[l_sat->state], l_sat->loads, l_sat->fails, l_sat->tx, l_sat->rexmt);

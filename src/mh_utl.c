@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHUTL"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -39,6 +39,7 @@
 **		24-OCT-2026	RRL	X01-20 : JUMBO, RCVBUF.
 **		25-OCT-2026	RRL	X01-21 : SOLICIT.
 **		25-OCT-2026	RRL	X01-22 : SATCFG, MOPVOL, MOPLOAD, MOPFAIL, MOPSTATS.
+**		24-NOV-2026	CLD	X.01-25 : SATIPCFG, IPCFG, BOOTP, TFTPLOAD, TFTPFAIL, TFTPSTATS.
 **
 **--
 */
@@ -111,6 +112,12 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$MHREC(MH$_MOPVOL,	"MOPVOL, satellite !AZ (!AZ) asks for its system by MOP !AZ: volunteered, !AZ:[!AZ.SYSCOMMON.SYSEXE]APB.EXE, !UL octets"),
 	$MHREC(MH$_MOPLOAD,	"MOPLOAD, satellite !AZ (!AZ) is loaded: !UL octets and its parameters in !UL message!%S, !UL sent again, in !UL ms"),
 	$MHREC(MH$_MOPFAIL,	"MOPFAIL, satellite !AZ (!AZ) is not loaded: !AZ"),
+	$MHREC(MH$_SATIPCFG,	"SATIPCFG, satellite !AZ is loaded by BOOTP and TFTP as !AZ from unit !AZ, root !AZ"),
+	$MHREC(MH$_IPCFG,	"IPCFG, BOOTP and TFTP of the satellites at !AZ/!UL on !AZ, gateway !AZ"),
+	$MHREC(MH$_BOOTP,	"BOOTP, satellite !AZ (!AZ) asks by !AZ: given !AZ, boot file !AZ"),
+	$MHREC(MH$_TFTPLOAD,	"TFTPLOAD, satellite !AZ (!AZ) has read !UL file!%S, !UQ octets, by TFTP in !UL s; !UL not found"),
+	$MHREC(MH$_TFTPFAIL,	"TFTPFAIL, satellite !AZ (!AZ) is not given !AZ: !AZ"),
+	$MHREC(MH$_TFTPSTATS,	"TFTPSTATS, satellite !AZ (!AZ): !UL BOOTP answer!%S, !UL file!%S, !UQ octets, !UL not found, !UL refused, !UQ sent again"),
 	$MHREC(MH$_MOPSTATS,	"MOPSTATS, satellite !AZ (!AZ): !AZ, loaded !UL time!%S, !UL failure!%S, !UQ message!%S sent, !UQ sent again"),
 	$MHREC(MH$_RCVBUF,	"RCVBUF, the socket of !AZ holds !UL octets of frames, not !UL: a burst of jumbo frames can be lost; raise net.core.rmem_max to !UL"),
 	$MHREC(MH$_MISALIGN,	"MISALIGN, !AZ starts !SL octets into a physical sector of !UL: every write is a read-modify-write of the disk"),

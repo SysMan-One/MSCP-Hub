@@ -20,6 +20,7 @@
 #		25-OCT-2026	RRL	X01-21 : the system disk of a satellite, T_BOOT.
 #		25-OCT-2026	RRL	X01-22 : the reader of Files-11, T_ODS; the MOP server, T_MOP.
 #		26-OCT-2026	RRL	X01-23 : a node of two adapters, T_MCHAN.
+#		24-NOV-2026	CLD	X.01-25 : the BOOTP and TFTP server, T_TFTP.
 #
 #---
 
@@ -64,6 +65,12 @@ add_executable(t_mop t_mop.c)
 target_link_libraries(t_mop PRIVATE mhcore)
 
 add_test(NAME mop COMMAND t_mop)
+
+add_executable(t_tftp t_tftp.c)
+
+target_link_libraries(t_tftp PRIVATE mhcore)
+
+add_test(NAME tftp COMMAND t_tftp)
 
 add_executable(t_blk t_blk.c)
 

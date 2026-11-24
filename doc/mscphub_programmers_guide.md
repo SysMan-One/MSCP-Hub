@@ -3,10 +3,10 @@
 ## Programmer's Guide
 
     Order Number:       MSCPHUB-PG-0119
-    Software Version:   MSCPHUB Version X01-23
+    Software Version:   MSCPHUB Version X.01-25
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-22.
-    Date:               25-OCT-2026
+    Revision/Update:    This manual supersedes the MSCPHUB Programmer's Guide of Version X01-23.
+    Date:               24-NOV-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
 
@@ -211,6 +211,7 @@ Bottom up:
 | `mh_bk.c` | Backend | The disk I/O of the units, by io_uring |
 | `mh_ods.c` | Files-11 | A reader of the volume of a unit, ODS-2 and ODS-5, read only: a file by its path |
 | `mh_mop.c` | MOP | The MOP server of the Alpha satellites: their bootstrap and parameters, from their disk |
+| `mh_tftp.c` | BOOTP and TFTP | ARP, IPv4 and UDP of its own; the BOOTP and TFTP server of the Integrity satellites: their loader and memory disk, from their disk |
 | `mh_utl.c` | Services | The message catalogue, the OpenVMS time, conversions |
 | `mh_hlp.c` | Help | `/HELP`, out of the help library |
 | `mh_stat.c` | Statistics | The block of state and counters in shared memory, and its reader |
@@ -224,7 +225,7 @@ server and MHMON, in `include/mh_stat.h`.
 
 ## 2.2 The Event Loop
 
-`s_mh$loop` in `mscphub.c` waits on EPOLL for four sources:
+`s_mh$loop` in `mscphub.c` waits on EPOLL for these sources:
 
 | Source | Event |
 |---|---|
@@ -232,6 +233,7 @@ server and MHMON, in `include/mh_stat.h`.
 | A TIMERFD of 20 ms | The tick of the protocol: `mh$cc_tick` (HELLO, timers of the channels and circuits), `mh$bk_tick` (stuck requests), `mh$stat_tick` (the queues; the copy every fifth tick) |
 | The EVENTFD of io_uring | Disk completions: `mh$bk_reap` |
 | The two MOP sockets, with /SATELLITE*n* | Frames of MOP V3 and V4: each given to `mh$mop_input`; on the tick, `mh$mop_tick` sends again what is unanswered |
+| The IPv4 and ARP sockets, with /SATELLITE*n* of `IP=` | Frames of IPv4 and ARP: each given to `mh$tftp_input`; on the tick, `mh$tftp_tick` sends again what is unacknowledged and tells a boot that has gone quiet |
 | A SIGNALFD | SIGINT and SIGTERM stop the server; SIGUSR1 writes the state |
 
 A routine of any layer that returns a condition of severity F stops the loop; the server then says
@@ -280,6 +282,11 @@ minimum. Frames the server has sent itself come back to such a socket and are dr
 With /SATELLITE*n* two more sockets are opened (`mh$lan_mop_open`): one of type 60-01 for MOP V3,
 one of 802.2 for MOP V4, whose SNAP 08-00-2B-60-01 `mh_mop.c` checks. Both join the multicast of MOP,
 AB-00-00-01-00-00. `mh$lan_mop_send` takes a frame made whole by `mh_mop.c`.
+
+With a satellite of `IP=` two more are opened (`mh$lan_ip_open`): one of IPv4 and one of ARP. The
+kernel gives the IPv4 one, by a filter of classic BPF, only a UDP datagram that is no fragment and
+goes to /IPADDRESS or to the port of BOOTP: the traffic of the host on a shared interface is not
+copied to the server. `mh$lan_ip_send` takes a frame made whole by `mh_tftp.c`.
 
 ## 3.3 mh_cc.c
 
@@ -450,7 +457,41 @@ the name of the server, the name of the service of the unit and its UNIT_ID, the
 server, then SCSNODE, SCSSYSTEMID, NISCS_PORT_SERV and NISCS_CONV_BOOT of
 `[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` in the order they are in that file, then the group and the password.
 Then the PARAMETER LOAD WITH TRANSFER ADDRESS. The load of an OpenVMS boot server, recorded on the LAN,
-is the same octet for octet but for the name and the system ID of the server.
+is the same octet for octet but for the name and the system ID of the server. A satellite of `IP=` is
+not answered here; with `/PASSIVE` no console is.
+
+## 3.17 mh_tftp.c
+
+The BOOTP and TFTP server of the satellites of `IP=`. The server has no address of Linux: ARP,
+IPv4 and UDP are its own, on the adapter of the port, as MOP is. It answers an ARP request for
+/IPADDRESS; a BOOTREQUEST, or a DHCPDISCOVER or DHCPREQUEST, of the adapter of a satellite and of no
+relay agent - with BOOTP to BOOTP, with OFFER and ACK to DHCP, a NAK to a request of another
+address, nothing to a request that names another server (option 54); and a TFTP read request of
+mode `octet` of that adapter from the address of its satellite. The checksum of
+the IP header is checked; the one of UDP is not, since a frame of the stack of the host (a veth, a
+TAP) reaches AF_PACKET with it not yet filled in. What the server sends has both.
+
+The boot file is `unit:[root.SYSCOMMON.SYSEXE]VMS_LOADER.EFI`, the unit by `dvname`, its full
+cluster name: IPB refuses another. A TFTP name is taken apart as OpenVMS writes it - the unit must be
+the satellite's, `_` before it and `<>` for `[]` are taken, the version is dropped - and the file is
+found by `mh$ods_lookup` and read whole by `mh$ods_read`. It is read only if TCP/IP Services would
+read it for its TFTP account: WORLD read in `FILEPROT`, or an ACE of an identifier that gives read to
+`VMS$SATELLITE_ACCESS` (%X8000000A), which `mh_ods.c` finds in the ACL area of the header (`satacl`).
+A file of VAR or VFC records is sent as a stream: the data of each record, the control area of VFC
+left out, and a line feed; this is how TCP/IP Services V5.7 sends `SYS$MEMORYDISK.DAT`, octet for
+octet. The file is read in the event loop: the server does nothing else meanwhile, which for the
+files of a boot, in the page cache, is a matter of milliseconds.
+
+A transfer (`MH$TFTPXFER`) has a port of the server, from 49152 up, the file in memory, the block
+size and the block sent - 32 bits, the low 16 on the wire, so that a file of more than 65535 blocks
+goes on from 0. The options `blksize` (up to what a frame holds, 8192 at most), `tsize` and `timeout`
+are taken once each and answered by an OACK; the client's ERROR after it ends the transfer, which is how a client asks
+for the size alone. A packet unacknowledged in its timeout goes again, five times; an ACK of another
+block is not answered. A request again from the port of a transfer that is at its first packet is
+that packet lost: it goes again. Eight transfers run at once; a ninth takes the place of the one
+heard of longest ago. When the TFTP of a satellite has been quiet for 10 seconds the boot is told
+(`TFTPLOAD`). The name of the satellite in the messages is SCSNODE of the `IA64VMSSYS.PAR` it has
+read. With `/PASSIVE` nothing is answered.
 
 ---
 
@@ -475,7 +516,8 @@ All are declared in `include/mh_def.h`.
 | `MH$LAT` | The time counters of one operation of a unit |
 | `MH$STAT` | The statistics block: who the server is, its counters, its nodes and units (`mh_stat.h`) |
 | `MH$STNODE`, `MH$STUNIT` | A node and a unit in the block |
-| `MH$MOPSAT` | A satellite of /SATELLITE*n*: its adapter, unit and root, and the state of its load |
+| `MH$MOPSAT` | A satellite of /SATELLITE*n*: its adapter, unit and root, the address of `IP=`, the state of its load, the counters of its BOOTP and TFTP |
+| `MH$TFTPXFER` | A TFTP transfer: the client, the port of the server, the file in memory, the block size and the block sent |
 | `MH$ODS`, `MH$ODSFILE`, `MH$ODSEXT` | A Files-11 volume being read, a file of it, an extent of the file |
 
 The ownership is simple, because there is one thread: a structure belongs to the layer that
@@ -803,6 +845,7 @@ not in the kit.
 | `mchan` | A node of two adapters: the second channel serves the circuit of the first, a packet goes by the channel of the larger buffer with its sequence number, the circuit outlives a channel, a packet too large for the channels left fails it at once, a SOLICIT_SRV closes the other channels |
 | `ods` | The reader of Files-11 on a small volume made by the test (`tests/t_vol.h`): the home block, INDEXF.SYS, an alias, versions, extents and extension headers, a wrong sequence number or checksum |
 | `mop` | The MOP server: a satellite loaded from the volume of `ods`, V4 and V3, the parameters item by item, the timers, the requests not answered |
+| `tftp` | The BOOTP and TFTP server: `IP=` and /IPADDRESS checked, ARP, BOOTP and DHCP octet by octet with both checksums, TFTP with and without options, the size alone, a file of whole blocks, the access by WORLD and by the ACE, VAR, NOSPAN and VFC records as a stream, the block number past 65535, the packets sent again, the requests not answered |
 | `stat` | The statistics block: made, copied every 100 ms, never a torn copy under a writer in another thread, another layout refused, the queues; the answers of Modbus |
 | `t4` | MHMON records a published block: the header of T4, the same fields in every row, the rate of a unit |
 | `init` | The System V scripts: no start without the parameter file, the collector of T4 started, its state, stopped with its file closed |
@@ -832,6 +875,7 @@ not in the kit.
 | Jumbo frames up to an MTU of 9000 | `MH$K_LAN_MAXMTU`, `mh_def.h` |
 | No member disk of a shadow set (no forced error) | `mh_mscp.c` |
 | No tapes | not implemented |
-| 8 satellites loaded by MOP | `/SATELLITE0` to `/SATELLITE7` in `s_opts`, `mscphub.c` |
-| MOP for Alpha satellites only; no BOOTP or TFTP: an OpenVMS node loads an Integrity satellite | not implemented |
+| 8 satellites loaded by MOP, BOOTP and TFTP, in all | `/SATELLITE0` to `/SATELLITE7` in `s_opts`, `mscphub.c` |
+| 8 TFTP transfers at a time; a file of 64 MB at most | `MH$K_TFTP_MAXXFER`, `MH$K_TFTP_MAXFILE`, `mh_def.h` |
+| No BOOTP relay agents; no ICMP (no ping of /IPADDRESS) | `mh_tftp.c` |
 | No cluster over IP | not implemented |

@@ -112,6 +112,17 @@ Specifies how many commands each OpenVMS node may have in progress on
 the disk server at a time, 2 to 64. The value is given to a node when
 it connects. The default is 16.
 
+## /GATEWAY -- the router of the I64 satellites
+
+```
+/GATEWAY=address
+```
+
+The router BOOTP gives the I64 satellites of IP= (see /SATELLITE0).
+It must be an address of the network of /IPADDRESS. Without it the
+satellites are given no router: none is needed on the LAN of the
+server.
+
 ## /GROUP -- the cluster group number
 
 ```
@@ -147,6 +158,25 @@ Specifies the Linux interface the OpenVMS nodes are on: an Ethernet
 adapter, a bridge, a VLAN, a tap device in a bridge. Required. The
 server needs CAP_NET_RAW: run it as root. The MAC address of the
 interface is not changed.
+
+## /IPADDRESS -- the address of BOOTP and TFTP
+
+```
+/IPADDRESS=address[/prefix]     (default prefix 24)
+```
+
+The IPv4 address the server answers BOOTP and TFTP at, for the I64
+satellites of IP= (see /SATELLITE0). Required when one is given. The
+prefix is the length of the mask of the network of the satellites, 8
+to 30:
+
+```
+/IPADDRESS=192.168.42.5/24
+```
+
+The server speaks IPv4 itself on /INTERFACE, as it speaks NISCA and
+MOP. The address is not one of Linux: give Linux no address of it
+on that interface, and no other host either.
 
 ## /LISTEN -- seconds of silence at start-up
 
@@ -211,10 +241,10 @@ The server only listens and reports the nodes it sees. It opens no
 channel and sends nothing at all. Safe on any LAN, for example to
 look at a production cluster.
 
-## /SATELLITE0 ... /SATELLITE7 -- load a satellite by MOP
+## /SATELLITE0 ... /SATELLITE7 -- load a diskless satellite
 
 ```
-/SATELLITE0=address,unit,root[,SIZE=octets]
+/SATELLITE0=address,unit,root[,SIZE=octets | ,IP=address]
 ```
 
 Makes the server the MOP server of a diskless Alpha satellite: when
@@ -245,10 +275,33 @@ The options:
 
 - SIZE=octets -- the octets of the image in a MOP message, 246 to
   1482. The default is 1482.
+- IP=address -- an I64 (Integrity) satellite, loaded by BOOTP and
+  TFTP instead of MOP; the address BOOTP gives it. /IPADDRESS is
+  then required.
+
+An I64 satellite boots from a LAN entry of its Boot Manager with the
+memory disk flag (0x200000; BOOT_OPTIONS.COM sets it). BOOTP gives it
+its address, the mask, the router of /GATEWAY and the boot file
+unit:[root.SYSCOMMON.SYSEXE]VMS_LOADER.EFI, the unit by its full
+cluster name ($42$DKA0:). Its loader then reads VMS_LOADER.EFI and
+every file of its memory disk by TFTP, from the disk itself:
+
+```
+/IPADDRESS=192.168.42.5/24
+/UNIT1=DKA0,/srv/vms/i64sys.img
+/SATELLITE1=08-00-2B-E5-44-10,DKA0,SYS10,IP=192.168.42.10
+```
+
+The server reads only what TCP/IP Services would read for its TFTP:
+a file of WORLD read, or of an ACE of VMS$SATELLITE_ACCESS - as
+CLUSTER_CONFIG_LAN sets them - and only on the unit of the satellite,
+for its own adapter and address. A file of variable records is sent
+as a stream, each record ended by a line feed, as TCP/IP Services
+sends it.
 
 The root may be given as LANCP gives it: <SYS10.> or [SYS10.]. A
-satellite needs an OpenVMS node with votes to join a cluster: the
-server has none.
+satellite needs votes to join a cluster: of an OpenVMS node, or its
+own (VOTES of its root) - the server has none.
 
 ## /SYNC -- when a WRITE is on disk
 
@@ -669,6 +722,20 @@ chunks taken in and their octets, the chunks dropped.
 
 User Action: None.
 
+### BOOTP
+
+```
+satellite 'address' ('name') asks by 'BOOTP|DHCP': given 'address', boot file 'file'
+```
+
+Severity: information.
+
+Explanation: The firmware of an I64 satellite of /SATELLITEn asks for
+its address. The server has given it, and the name of its loader.
+TFTP follows: TFTPLOAD tells what the satellite has read.
+
+User Action: None.
+
 ### CHCLOSE
 
 ```
@@ -796,6 +863,20 @@ When it does not - Linux is still writing - the disk waits for it.
 
 User Action: Check the Linux disk under the unit: a dead disk, a lost
 iSCSI or NFS server. Look at dmesg.
+
+### IPCFG
+
+```
+BOOTP and TFTP of the satellites at 'address'/'n' on 'interface', gateway 'address'
+```
+
+Severity: information.
+
+Explanation: The server answers the I64 satellites of IP= at this
+address (/IPADDRESS, /GATEWAY).
+
+User Action: None. The address must be no address of Linux, and of no
+other host.
 
 ### IVPARAM
 
@@ -943,8 +1024,8 @@ the disk is not ODS-2 or ODS-5, VAXCLUSTER is 0 in the parameter file
 (the satellite is no member of a cluster), the console stopped
 answering, or it asked for a message out of order. A failure before
 the load starts gets no answer at all: the console asks again, and
-another MOP server may load it. The same failure is told once a
-minute.
+another MOP server may load it. The failures of one satellite are
+told once a minute.
 
 User Action: Check the root: the files are
 [root.SYSCOMMON.SYSEXE]APB.EXE and [root.SYSEXE]ALPHAVMSSYS.PAR of
@@ -1176,6 +1257,19 @@ from that disk and root.
 
 User Action: None.
 
+### SATIPCFG
+
+```
+satellite 'address' is loaded by BOOTP and TFTP as 'address' from unit 'disk', root 'root'
+```
+
+Severity: information.
+
+Explanation: An I64 satellite of /SATELLITEn: the server gives it this
+address and loads it from that disk and root.
+
+User Action: None.
+
 ### SHUTDOWN
 
 ```
@@ -1267,6 +1361,56 @@ ioctl(SIOCGIFINDEX), errno=19   there is no such interface
 ```
 
 User Action: Correct what the call and errno name.
+
+### TFTPFAIL
+
+```
+satellite 'address' ('name') is not given 'file': 'reason'
+```
+
+Severity: warning.
+
+Explanation: A request of an I64 satellite is refused. The reason says
+why: the file is on another unit than the satellite's, it may not be
+read (no WORLD read, no ACE of VMS$SATELLITE_ACCESS), it is larger
+than 64 MB, the disk cannot be read, a record runs past the end of the
+file; or the satellite asks DHCP for another address than its IP= (a
+NAK). A file that is not in the root is no failure: the loader looks
+in the root first, then in VMS$COMMON. The failures of one satellite
+are told once a minute.
+
+User Action: Check the root and the protection of its files. On an
+OpenVMS node, CLUSTER_CONFIG_LAN option "Reset an IA64 satellite node's
+boot environment file protections" sets them.
+
+### TFTPLOAD
+
+```
+satellite 'address' ('name') has read 'n' files, 'n' octets, by TFTP in 'n' s; 'n' not found
+```
+
+Severity: information.
+
+Explanation: The TFTP of a boot of an I64 satellite has been quiet for
+10 seconds: so much it has read - its loader and its memory disk. The
+files not found are the ones the loader looked for in the root before
+VMS$COMMON, and the optional ones: about 150 for OpenVMS V8.4. IPB and
+SOLICIT follow.
+
+User Action: None.
+
+### TFTPSTATS
+
+```
+satellite 'address' ('name'): 'n' BOOTP answers, 'n' files, 'n' octets, 'n' not found, 'n' refused, 'n' sent again
+```
+
+Severity: information.
+
+Explanation: The counters of an I64 satellite of /SATELLITEn, on
+SIGUSR1.
+
+User Action: None.
 
 ### TRSTATS
 

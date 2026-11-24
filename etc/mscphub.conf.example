@@ -1,6 +1,6 @@
 !++
 !  MODULE:		etc/mscphub.conf.example
-!  IDENT:		X01-17
+!  IDENT:		X.01-25
 !
 !  FACILITY:		MSCPHUB - MSCP disk server for OpenVMS nodes, over NISCA
 !
@@ -20,6 +20,7 @@
 !
 !		22-OCT-2026	RRL	X01-16 : /HELP=/AUTHORIZE, the topic as it is named.
 !		22-OCT-2026	RRL	X01-17 : /MODBUS.
+!		24-NOV-2026	CLD	X.01-25 : an I64 satellite of IP=, /IPADDRESS.
 !--
 !
 ! The LAN interface the OpenVMS nodes are on.  The same LAN segment - a
@@ -52,6 +53,14 @@
 ! adapter it boots from, the unit of its system disk, its root there.
 !
 ! /SATELLITE0=08-00-2B-E5-43-01,DKA100,SYS10
+!
+! A diskless I64 (Integrity) satellite the server loads by BOOTP and TFTP:
+! IP= is the address BOOTP gives it. /IPADDRESS is the address the server
+! answers at and the prefix of the network - no address of Linux -,
+! /GATEWAY the router given to the satellites, if they need one.
+!
+! /IPADDRESS=192.168.42.5/24
+! /SATELLITE1=08-00-2B-E5-44-10,DKA0,SYS10,IP=192.168.42.10
 !
 ! When a WRITE is on the disk: DSYNC (the default, every WRITE), GROUP
 ! (one fdatasync for the writes that come together).

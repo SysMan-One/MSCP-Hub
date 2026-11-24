@@ -68,6 +68,11 @@
 **						its system disk (MHODS); SATCFG, MOPVOL, MOPLOAD, MOPFAIL,
 **						MOPSTATS.
 **		26-OCT-2026	RRL	X01-23 : MH$NODE: OWNER and XCH, $MHOWNER; MH$VC: NOFIT.
+**		24-NOV-2026	CLD	X.01-25 : the BOOTP and TFTP server of the I64 satellites
+**					(MHTFTP): IP= of /SATELLITEn, /IPADDRESS, /GATEWAY,
+**					MH$TFTPXFER, the IP sockets of the port; the record
+**					attributes and the access of a file of MHODS; SATIPCFG,
+**					IPCFG, BOOTP, TFTPLOAD, TFTPFAIL, TFTPSTATS.
 **
 **--
 */
@@ -77,11 +82,11 @@
 #endif
 
 #ifndef	__IDENT__
-#define	__IDENT__	"X01-23"
+#define	__IDENT__	"X.01-25"
 #endif
 
 #ifndef	__REV__
-#define	__REV__		"1.23.0"
+#define	__REV__		"1.25.0"
 #endif
 
 #ifndef	__FAC__
@@ -162,6 +167,12 @@ enum	{
 	MH$K_MSG_MOPLOAD,			/* ... is loaded				*/
 	MH$K_MSG_MOPFAIL,			/* ... is not					*/
 	MH$K_MSG_MOPSTATS,			/* The counters of a satellite, on SIGUSR1	*/
+	MH$K_MSG_SATIPCFG,			/* A satellite is loaded by our BOOTP and TFTP	*/
+	MH$K_MSG_IPCFG,				/* ... from this address			*/
+	MH$K_MSG_BOOTP,				/* ... is given its address and its boot file	*/
+	MH$K_MSG_TFTPLOAD,			/* ... has read its files			*/
+	MH$K_MSG_TFTPFAIL,			/* ... asks for what it is not given		*/
+	MH$K_MSG_TFTPSTATS,			/* The counters of it, on SIGUSR1		*/
 
 	MH$K_MSG_MAX				/* End-Of-List				*/
 	};
@@ -220,6 +231,12 @@ enum	{
 #define	MH$_MOPLOAD		$MHSTS(MH$K_MSG_MOPLOAD,	STS$K_INFO)
 #define	MH$_MOPFAIL		$MHSTS(MH$K_MSG_MOPFAIL,	STS$K_WARN)
 #define	MH$_MOPSTATS		$MHSTS(MH$K_MSG_MOPSTATS,	STS$K_INFO)
+#define	MH$_SATIPCFG		$MHSTS(MH$K_MSG_SATIPCFG,	STS$K_INFO)
+#define	MH$_IPCFG		$MHSTS(MH$K_MSG_IPCFG,		STS$K_INFO)
+#define	MH$_BOOTP		$MHSTS(MH$K_MSG_BOOTP,		STS$K_INFO)
+#define	MH$_TFTPLOAD		$MHSTS(MH$K_MSG_TFTPLOAD,	STS$K_INFO)
+#define	MH$_TFTPFAIL		$MHSTS(MH$K_MSG_TFTPFAIL,	STS$K_WARN)
+#define	MH$_TFTPSTATS		$MHSTS(MH$K_MSG_TFTPSTATS,	STS$K_INFO)
 
 /*
 **  Sizes, limits and the timing of the protocol
@@ -326,6 +343,7 @@ typedef struct mh_mopsat_t {
 	uint8_t		mac [NISCA$K_SZ_MAC];	/* Its adapter: only known ones are answered	*/
 	unsigned	unit;			/* The unit of its system disk			*/
 	char		root [40];		/* SYS10, ASCIZ					*/
+	uint32_t	ip;			/* IP=: an I64 satellite, BOOTP and TFTP; 0 - MOP	*/
 	unsigned	size;			/* Octets of the image in a MEMORY LOAD		*/
 	char		name [NISCA$K_SZ_NODENAME + 3];	/* SCSNODE of its PAR, ASCIZ; the MAC till then	*/
 
@@ -355,7 +373,64 @@ typedef struct mh_mopsat_t {
 
 	uint32_t	loads, fails;
 	uint64_t	tx, rexmt;
+
+	/*
+	**  BOOTP and TFTP (IP=): all the boots; this boot, told when its
+	**  TFTP is quiet
+	*/
+	uint32_t	bootps, tfiles, tmiss, tfails;
+	uint64_t	toctets, trexmt, tfaillog;
+	uint64_t	bbegun, bheard;		/* Ticks of its first and its last TFTP, 0 - none	*/
+	uint32_t	bfiles, bmiss;
+	uint64_t	boctets;
 } MH$MOPSAT;
+
+/*
+**  The BOOTP and TFTP server of the I64 satellites (MHTFTP): IPv4 and UDP
+**  of its own on the adapter of the port, by AF_PACKET as MOP
+*/
+#define	MH$K_ETH_IP		0x0800
+#define	MH$K_ETH_ARP		0x0806
+#define	MH$K_BOOTPS		67
+#define	MH$K_BOOTPC		68
+#define	MH$K_TFTP_PORT		69
+#define	MH$K_TFTP_PORT0		49152		/* Our ports of the transfers: 49152 - 65535	*/
+#define	MH$K_TFTP_NPORT		16384
+#define	MH$K_TFTP_MAXXFER	8		/* Transfers at once, all the satellites	*/
+#define	MH$K_TFTP_DEFBLK	512		/* With no blksize				*/
+#define	MH$K_TFTP_MAXBLK	8192		/* ... at most, and what a frame holds		*/
+#define	MH$K_TFTP_RETRY		(1 * MH$K_TICKS_SEC)	/* A packet again, unacknowledged	*/
+#define	MH$K_TFTP_TRIES		5		/* ... so many times, then the transfer is cut	*/
+#define	MH$K_TFTP_QUIET		(10 * MH$K_TICKS_SEC)	/* A boot is told when TFTP is quiet so long	*/
+#define	MH$K_TFTP_MAXFILE	(64 * 1024 * 1024)	/* A file at most			*/
+#define	MH$K_TFTP_NAMESZ	256		/* The name of a file a satellite asks for	*/
+
+enum	{
+	MH$K_IP_IP	= 0,			/* The sockets: IPv4, ARP			*/
+	MH$K_IP_ARP,
+	MH$K_IP_NSOCK
+	};
+
+typedef struct mh_tftpxfer_t {
+	int		busy;
+	unsigned	sat;			/* Of the satellite of the port			*/
+	uint8_t		mac [NISCA$K_SZ_MAC];	/* The client: its adapter, its address, its port	*/
+	uint32_t	ip;
+	uint16_t	cport;
+	uint16_t	sport;			/* Ours						*/
+	uint8_t *	data;			/* The file, read whole				*/
+	uint64_t	len;
+	unsigned	blksize;
+	uint32_t	block;			/* The one sent: 0 - the OACK; the wire has the low 16 bits	*/
+	unsigned	timeout;		/* Ticks before a packet goes again		*/
+	unsigned	tries;
+	uint64_t	due;			/* Tick it goes again				*/
+	uint64_t	heard;			/* Tick of the last packet of the client	*/
+	uint32_t	resent;
+	char		oack [64];		/* The options taken: name, value, each ASCIZ	*/
+	unsigned	oacklen;
+	char		file [MH$K_TFTP_NAMESZ];
+} MH$TFTPXFER;
 #define	MH$K_MAXHOST		256		/* Host numbers of the connections		*/
 #define	MH$K_MSCP_CNT_TMO	20		/* Controller timeout, s: the GUS of the client	*/
 #define	MH$K_MSCP_MAXBCNT	0x20000		/* 128 KB, MAXBCNT and DMAXBCNT			*/
@@ -400,7 +475,9 @@ typedef struct mh_cfg_t {
 	ASC		ack;			/* /ACK=FLUSH | HOLD				*/
 	ASC		modbus;			/* /MODBUS: [address:]port, empty - none	*/
 	ASC		unit [MH$K_MAXUNIT];	/* /UNITn=name,path[,RO][,MEDIA=m][,SECTOR=n]	*/
-	ASC		sat [MH$K_MAXSAT];	/* /SATELLITEn=mac,unit,root[,SIZE=n]		*/
+	ASC		sat [MH$K_MAXSAT];	/* /SATELLITEn=mac,unit,root[,SIZE=n | ,IP=a.b.c.d]	*/
+	ASC		ipaddr;			/* /IPADDRESS=a.b.c.d[/n]: of BOOTP and TFTP	*/
+	ASC		gateway;		/* /GATEWAY=a.b.c.d: given to the satellites	*/
 } MH$CFG;
 
 /*
@@ -880,6 +957,11 @@ typedef struct mh_odsfile_t {
 	uint32_t	hiblk;			/* Blocks allocated, as the header says		*/
 	uint32_t	blocks;			/* ... as the map has them			*/
 	uint64_t	size;			/* Octets to the end of file			*/
+	uint8_t		rtype;			/* FAT: record type, attributes, size of the VFC area	*/
+	uint8_t		rattrib;
+	uint8_t		vfcsize;
+	uint16_t	fileprot;		/* FH2$W_FILEPROT				*/
+	int		satacl;			/* An ACE gives read to VMS$SATELLITE_ACCESS	*/
 	unsigned	nmap;
 	MH$ODSEXT	map [MH$K_ODS_MAXMAP];
 } MH$ODSFILE;
@@ -963,6 +1045,16 @@ typedef struct mh_port_t {
 	uint64_t	mop_rx, mop_other;	/* MOP messages taken; of unknown adapters	*/
 
 	/*
+	**  BOOTP and TFTP of the I64 satellites: the sockets, our address,
+	**  the transfers
+	*/
+	int		ipsd [MH$K_IP_NSOCK];
+	uint32_t	ipaddr, ipmask, gateway;	/* Host order; 0 - none			*/
+	uint16_t	portseed;
+	MH$TFTPXFER	xfer [MH$K_TFTP_MAXXFER];
+	uint64_t	ip_rx, ip_tx, ip_bad, ip_other, arp_rx;
+
+	/*
 	**  The tests take the frames here instead of the socket
 	*/
 	int		(*xmit) (struct mh_port_t *a_port, const uint8_t *a_frame, unsigned a_len);
@@ -1012,6 +1104,9 @@ int	mh$lan_recv	(MH$PORT *a_port, uint8_t *a_frame, unsigned a_frmsz, unsigned *
 int	mh$lan_mop_open	(MH$PORT *a_port);
 int	mh$lan_mop_recv	(MH$PORT *a_port, unsigned a_fmt, uint8_t *a_frame, unsigned a_frmsz, unsigned *a_len);
 int	mh$lan_mop_send	(MH$PORT *a_port, unsigned a_fmt, const uint8_t *a_frame, unsigned a_len);
+int	mh$lan_ip_open	(MH$PORT *a_port);
+int	mh$lan_ip_recv	(MH$PORT *a_port, unsigned a_sock, uint8_t *a_frame, unsigned a_frmsz, unsigned *a_len);
+int	mh$lan_ip_send	(MH$PORT *a_port, unsigned a_sock, const uint8_t *a_frame, unsigned a_len);
 
 /*
 **  MHMOP.C
@@ -1020,6 +1115,14 @@ int	mh$mop_init	(MH$PORT *a_port, const MH$CFG *a_cfg);
 int	mh$mop_input	(MH$PORT *a_port, unsigned a_fmt, const uint8_t *a_frame, unsigned a_len);
 int	mh$mop_tick	(MH$PORT *a_port);
 int	mh$mop_stats	(MH$PORT *a_port);
+
+/*
+**  MHTFTP.C
+*/
+int	mh$tftp_init	(MH$PORT *a_port, const MH$CFG *a_cfg);
+int	mh$tftp_input	(MH$PORT *a_port, unsigned a_sock, const uint8_t *a_frame, unsigned a_len);
+int	mh$tftp_tick	(MH$PORT *a_port);
+int	mh$tftp_stats	(MH$PORT *a_port);
 
 /*
 **  MHCC.C

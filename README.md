@@ -29,7 +29,7 @@ and manuals in the manner of OpenVMS.
   and the counters as the MONITOR utility of OpenVMS does; `/RECORD` writes T4 style CSV for
   TLViz, `mscphub-t4.service` records every minute. `/MODBUS=port` serves the counters over
   Modbus/TCP.
-- Version: X01-21.
+- Version: X.01-25.
 
 Small: no database, no interpreter, no framework - the server is about 300 KB and runs in a few
 megabytes, so the hub of a home VMScluster can be a Raspberry Pi or a NaPi-C board (RK3308,
@@ -39,7 +39,9 @@ What it does: up to 8 disks per server (files or block devices, 512 or 4096-octe
 sectors, read-only units such as a CD image), READ, WRITE, ERASE and COMPARE over
 the block transfers of NISCA, io_uring disk I/O with `fdatasync` before a WRITE is
 answered, a systemd unit, its counters on SIGUSR1, in MHMON, in T4 files and over
-Modbus/TCP.
+Modbus/TCP. It serves the system disk of a diskless satellite and loads the satellite
+itself: an Alpha by MOP, an Integrity by BOOTP and TFTP - the files read from that very
+disk, so no OpenVMS boot node is needed.
 
 ## Build and install
 

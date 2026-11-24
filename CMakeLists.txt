@@ -34,6 +34,8 @@
 #					X.aa-bb[ECOcc] is checked strictly
 #					(two digits in every field, X.01-24ECO3 is refused); the
 #					older Xaa-bb[ECOc] as it was.
+#		24-NOV-2026	CLD	X.01-25 : MHTFTP, the BOOTP and TFTP server of the I64
+#					satellites.
 #
 #---
 
@@ -171,6 +173,7 @@ add_library(mhcore STATIC
 	src/mh_mscp.c
 	src/mh_ods.c
 	src/mh_mop.c
+	src/mh_tftp.c
 	src/mh_stat.c
 	src/mh_mbus.c
 	src/mh_hlp.c)

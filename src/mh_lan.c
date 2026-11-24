@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHLAN"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -37,6 +37,8 @@
 **		20-OCT-2026	RRL	X01-10 : Initial public version.
 **		24-OCT-2026	RRL	X01-20 : a frame up to an MTU of 9000; the receive buffer for them.
 **		25-OCT-2026	RRL	X01-22 : the sockets of MOP, V3 and V4, for the MOP server.
+**		24-NOV-2026	CLD	X.01-25 : the sockets of IPv4 and ARP, for the BOOTP and TFTP
+**					server; the IPv4 one filtered in the kernel.
 **
 **--
 */
@@ -51,6 +53,7 @@
 #include	<arpa/inet.h>
 #include	<linux/if_packet.h>
 #include	<linux/if_ether.h>
+#include	<linux/filter.h>
 
 #include	"mh_def.h"
 
@@ -270,6 +273,14 @@ int	mh$lan_close	(
 			close(a_port->mopsd[i]);
 
 		a_port->mopsd[i] = -1;
+		}
+
+	for ( unsigned i = 0; i < MH$K_IP_NSOCK; i++ )
+		{
+		if ( a_port->ipsd[i] > 0 )
+			close(a_port->ipsd[i]);
+
+		a_port->ipsd[i] = -1;
 		}
 
 	return	STS$K_SUCCESS;
@@ -595,6 +606,143 @@ int	mh$lan_mop_send	(
 
 	if ( 0 > send(a_port->mopsd[a_fmt], a_frame, a_len, 0) )
 		return	$LOG_FAO(STS$K_ERROR, "send(!UL octets of MOP) on !AZ failed, errno=!SL", a_len, a_port->ifname, errno);
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Open the sockets of the BOOTP and TFTP server: one for IPv4, one for
+**	ARP.  The kernel gives the first only what may be ours - a datagram
+**	of UDP to /IPADDRESS, or to the port of BOOTP, not a fragment - so
+**	that the traffic of the host on a shared interface is not copied to
+**	us; MHTFTP checks the rest.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context, IPADDR set; output: IPSD
+**
+**  IMPLICIT INPUTS/OUTPUTS:
+**	The process must hold CAP_NET_RAW.
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; MH$_SYSERR has been signalled otherwise.
+**--
+*/
+int	mh$lan_ip_open	(
+		MH$PORT *	a_port
+			)
+{
+static	const uint16_t	s_proto [MH$K_IP_NSOCK] = { ETH_P_IP, ETH_P_ARP };
+struct sockaddr_ll	l_sll = {0};
+struct sock_filter	l_bpf [] = {
+	BPF_STMT(BPF_LD  | BPF_B   | BPF_ABS, 23),			/* The protocol: UDP		*/
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 17, 0, 8),
+	BPF_STMT(BPF_LD  | BPF_H   | BPF_ABS, 20),			/* Not a fragment		*/
+	BPF_JUMP(BPF_JMP | BPF_JSET | BPF_K, 0x3FFF, 6, 0),
+	BPF_STMT(BPF_LD  | BPF_W   | BPF_ABS, 30),			/* To us			*/
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, a_port->ipaddr, 3, 0),
+	BPF_STMT(BPF_LDX | BPF_B   | BPF_MSH, 14),			/* ... or to the port 67	*/
+	BPF_STMT(BPF_LD  | BPF_H   | BPF_IND, 16),
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, MH$K_BOOTPS, 0, 1),
+	BPF_STMT(BPF_RET | BPF_K, 0xFFFF),
+	BPF_STMT(BPF_RET | BPF_K, 0)
+	};
+struct sock_fprog	l_prog = { (unsigned short) $ARRSZ(l_bpf), l_bpf };
+
+	for ( unsigned i = 0; i < MH$K_IP_NSOCK; i++ )
+		{
+		/*
+		**  Of no protocol until it is bound, the filter on: no frame of
+		**  another interface, or one the filter would drop, waits in it
+		*/
+		if ( 0 > (a_port->ipsd[i] = socket(AF_PACKET, SOCK_RAW | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)) )
+			return	$MHMSG(MH$_SYSERR, "socket(AF_PACKET, IP)", errno, strerror(errno));
+
+		if ( (i == MH$K_IP_IP) && setsockopt(a_port->ipsd[i], SOL_SOCKET, SO_ATTACH_FILTER, &l_prog, sizeof(l_prog)) )
+			return	$MHMSG(MH$_SYSERR, "setsockopt(SO_ATTACH_FILTER, IP)", errno, strerror(errno));
+
+		l_sll.sll_family	= AF_PACKET;
+		l_sll.sll_protocol	= htons(s_proto[i]);
+		l_sll.sll_ifindex	= a_port->ifindex;
+
+		if ( bind(a_port->ipsd[i], (struct sockaddr *) &l_sll, sizeof(l_sll)) )
+			return	$MHMSG(MH$_SYSERR, "bind(AF_PACKET, IP)", errno, strerror(errno));
+		}
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Receive one frame from a socket of IPv4 or ARP, if there is one.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_sock		The socket: MH$K_IP_IP, MH$K_IP_ARP
+**	a_frame		Output area for the whole frame
+**	a_frmsz		Its size
+**	a_len		Output: the length of the frame, 0 - nothing has been received
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS - a frame is in, or there is none (a_len is 0);
+**	STS$K_ERROR - RECVFROM(2) failed, logged with ERRNO.
+**--
+*/
+int	mh$lan_ip_recv	(
+		MH$PORT *	a_port,
+		unsigned	a_sock,
+		uint8_t *	a_frame,
+		unsigned	a_frmsz,
+		unsigned *	a_len
+			)
+{
+	return	s_mh$lan_rcv(a_port, a_port->ipsd[a_sock], a_frame, a_frmsz, a_len);
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	Send a frame of IPv4 or ARP, made whole by the caller.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_sock		MH$K_IP_IP, MH$K_IP_ARP
+**	a_frame		The frame, padded to the Ethernet minimum
+**	a_len		Its length
+**
+**  IMPLICIT INPUTS/OUTPUTS:
+**	XMIT of the port, when set, takes the frame instead of the socket.
+**
+**  RETURN VALUE:
+**	STS$K_SUCCESS; STS$K_ERROR - SEND(2) failed, logged with ERRNO.
+**--
+*/
+int	mh$lan_ip_send	(
+		MH$PORT *	a_port,
+		unsigned	a_sock,
+	const	uint8_t *	a_frame,
+		unsigned	a_len
+			)
+{
+	if ( a_port->xmit )
+		return	a_port->xmit(a_port, a_frame, a_len);
+
+	if ( 0 > send(a_port->ipsd[a_sock], a_frame, a_len, 0) )
+		return	$LOG_FAO(STS$K_ERROR, "send(!UL octets of IP) on !AZ failed, errno=!SL", a_len, a_port->ifname, errno);
 
 	return	STS$K_SUCCESS;
 }

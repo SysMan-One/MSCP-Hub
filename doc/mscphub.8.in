@@ -23,9 +23,11 @@
 .\"		24-OCT-2026	RRL	X01-20 : jumbo frames; their receive buffer.
 .\"		25-OCT-2026	RRL	X01-21 : the system disk of a satellite.
 .\"		25-OCT-2026	RRL	X01-22 : the MOP server of a satellite, /SATELLITEn.
+.\"		24-NOV-2026	CLD	X.01-25 : BOOTP and TFTP of an I64 satellite: IP=,
+.\"					/IPADDRESS, /GATEWAY.
 .\"
 .\"---
-.TH MSCPHUB 8 "25 October 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.TH MSCPHUB 8 "24 November 2026" "MSCPHUB @MH_IDENT@" "System Administration"
 .SH NAME
 mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
 .SH SYNOPSIS
@@ -130,7 +132,7 @@ takes a file as a disk of larger sectors, for tests only.  An ISO image of
 the OpenVMS CD is served as it is, with
 .BR RO .
 .TP
-\fB/SATELLITE0\fR ... \fB/SATELLITE7=\fIaddress\fB,\fIunit\fB,\fIroot\fR[\fB,SIZE=\fIoctets\fR]
+\fB/SATELLITE0\fR ... \fB/SATELLITE7=\fIaddress\fB,\fIunit\fB,\fIroot\fR[\fB,SIZE=\fIoctets\fR | \fB,IP=\fIaddress\fR]
 A diskless Alpha satellite the server loads by MOP when its console boots
 from the LAN (BOOT EWA0): the LAN
 .I address
@@ -144,6 +146,23 @@ itself at every boot; the satellite is given the group and the password of
 the server.
 .B SIZE=
 is the octets of the image a MOP message carries, 246 to 1482; default 1482.
+With
+.B IP=
+it is an I64 satellite the server loads by BOOTP and TFTP: BOOTP gives it
+that address and the boot file \fIunit\fR:[\fIroot\fR.SYSCOMMON.SYSEXE]VMS_LOADER.EFI,
+the unit by its full cluster name; the loader reads it and every file of its
+memory disk by TFTP from the disk itself \- only a file of WORLD read or of an
+ACE of VMS$SATELLITE_ACCESS, as TCP/IP Services; a file of variable records
+as a stream of lines.
+.TP
+.BI /IPADDRESS= address\fR[\fB/\fIprefix\fR]
+The IPv4 address of BOOTP and TFTP for the satellites of IP=, and the length
+of the mask of their network, 8 to 30; default 24.  The server speaks IPv4
+itself on the interface: the address must be no address of Linux.
+.TP
+.BI /GATEWAY= address
+The router BOOTP gives the satellites of IP=, in the network of /IPADDRESS;
+default none.
 .TP
 .BR /SYNC= DSYNC | GROUP | NONE
 When a WRITE is on the disk.
@@ -303,7 +322,8 @@ buffer for them is 4 MB: give net.core.rmem_max 2097152 or more, or the
 server CAP_NET_ADMIN; RCVBUF says when it got less.
 .PP
 The server can serve the system disk of a diskless satellite: an OpenVMS
-node of the cluster loads the satellite, and the server answers its loader
+node of the cluster, or the server itself (MOP for an Alpha, BOOTP and TFTP
+for an I64), loads the satellite, and the server answers its loader
 (SOLICIT).  The satellite needs a cluster with quorum, and all the users of
 one system disk must be members of one cluster.
 .PP

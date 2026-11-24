@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_MOP"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -28,6 +28,7 @@
 **  MODIFICATION HISTORY:
 **
 **		25-OCT-2026	RRL	X01-22 : Initial revision.
+**		24-NOV-2026	CLD	X.01-25 : /PASSIVE answers no console.
 **
 **--
 */
@@ -456,6 +457,15 @@ unsigned	l_elen;
 	$CHECK((1 & mh$mop_init(l_port, &s_cfg)) && (l_port->nsat == 1), "SAT1: 08:00:2b:e5:43:01, dka100, <sys10.>");
 	$CHECK(!memcmp(l_sat->mac, s_satmac, 6) && !l_sat->unit && !strcmp(l_sat->root, "SYS10") && (l_sat->size == T$K_SIZE),
 		"... is 08-00-2B-E5-43-01, DKA100, SYS10, SIZE 1000");
+
+	/*
+	**  /PASSIVE: no console is answered
+	*/
+	l_port->passive = 1;
+	s_ntx = 0;
+	s_t$reqpgm(l_port, MH$K_MOP_V4, s_satmac, 1, 2, 0);
+	$CHECK(!s_ntx && (l_sat->state == MH$K_MOP_IDLE), "/PASSIVE: a REQUEST PROGRAM is not answered");
+	l_port->passive = 0;
 
 	/*
 	**  REQUEST PROGRAM by multicast, V4: ASSISTANCE VOLUNTEER to SAT1

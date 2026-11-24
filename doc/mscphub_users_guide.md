@@ -3,10 +3,10 @@
 ## User's Guide
 
     Order Number:       MSCPHUB-UG-0119
-    Software Version:   MSCPHUB Version X01-23
+    Software Version:   MSCPHUB Version X.01-25
     Operating System:   Linux
-    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-22.
-    Date:               25-OCT-2026
+    Revision/Update:    This manual supersedes the MSCPHUB User's Guide of Version X01-23.
+    Date:               24-NOV-2026
 
     Copyright (C) 2026 StarLet Squad and Ruslan R. Laishev.
 
@@ -60,7 +60,7 @@ This manual contains the following chapters and appendixes:
 | Chapter 1 | Introduces the server: what it does, how an OpenVMS node sees it, what it does not do, the small computers it runs on |
 | Chapter 2 | Installing the server |
 | Chapter 3 | Configuring the server: the facts of the cluster, the disks, the parameter file |
-| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd, the system disk of a satellite and loading the satellite by MOP |
+| Chapter 4 | Running the server, using its disks on OpenVMS, watching it with MHMON, T4 and Modbus, running it without systemd, the system disk of a satellite, loading an Alpha satellite by MOP and an Integrity one by BOOTP and TFTP |
 | Chapter 5 | Contains the command dictionary: the `mscphub` and `mhmon` commands and all their qualifiers |
 | Chapter 6 | Describes the format of a message and lists every message with what to do about it |
 | Chapter 7 | Troubleshooting: a symptom, what to look at, and what to do |
@@ -176,8 +176,9 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
 
 * It is not a member of the VMScluster and has no votes.
 * It serves disks only, no tapes.
-* It loads a diskless Alpha satellite by MOP (see 4.13), but not an Integrity one: that is loaded by
-  an OpenVMS node. It can serve the system disk of either (see 4.12).
+* It loads a diskless Alpha satellite by MOP (see 4.13) and an Integrity one by BOOTP and TFTP (see
+  4.14), and serves the system disk of either (see 4.12). It is no TCP/IP host: it answers only the
+  satellites it loads.
 * It cannot yet be a member disk of a shadow set.
 * It holds no locks and does not arbitrate between the nodes (see 4.3).
 * It works over the LAN only. A cluster over IP (IPCI) is not supported.
@@ -185,7 +186,8 @@ power failure of the Linux computer. The qualifier `/UNSAFE` turns it off, for t
   server sends by the one of the larger buffer, and goes on by the other when it fails (see C.9).
 
 MSCPHUB is verified with OpenVMS Alpha Version 8.3, also as the server of the system disk of a
-satellite and as its MOP server (Appendix C.9). Other versions that cluster over the LAN with PEDRIVER are expected to
+satellite and as its MOP server (Appendix C.9), and with OpenVMS I64 Version 8.4 as the BOOTP, TFTP
+and disk server of an Integrity satellite (Appendix C.11). Other versions that cluster over the LAN with PEDRIVER are expected to
 work.
 
 ## 1.6 Small Computers
@@ -731,8 +733,9 @@ says why.
 
 A satellite is a node of the VMScluster without a disk of its own. It loads OpenVMS over the LAN and
 runs from a system disk that another node serves. MSCPHUB can serve that disk. The satellite is
-loaded by its boot server: on an Alpha, the boot server sends the loader by MOP. The boot server is
-an OpenVMS node of the cluster, as this section shows, or MSCPHUB itself (Section 4.13).
+loaded by its boot server: on an Alpha, the boot server sends the loader by MOP; on an Integrity, by
+BOOTP and TFTP. The boot server is an OpenVMS node of the cluster, as this section shows, or MSCPHUB
+itself (Sections 4.13 and 4.14).
 
 This is how a satellite boots from a disk of the server:
 
@@ -861,11 +864,89 @@ server serves it, `$44$DKA100`.
 **Note**
 
 > * The disk must be ODS-2 or ODS-5.
-> * Only Alpha satellites are loaded. An Integrity satellite boots by PXE (BOOTP and TFTP) from an
->   OpenVMS node.
+> * MOP loads Alpha satellites only. An Integrity satellite is loaded by BOOTP and TFTP (Section 4.14).
 > * A console that asks for a file by its name (`boot ewa0 -file ...`) is not answered.
 > * The console of an AlphaServer asks in MOP Version 4 (IEEE 802.3 with SNAP). The server answers
 >   in the version the console asks in, Version 3 too.
+
+## 4.14 Loading an Integrity Satellite by BOOTP and TFTP
+
+An Integrity (I64) satellite does not use MOP. Its firmware asks the LAN by BOOTP for its address and
+the name of its loader, and the loader then reads its memory disk, some 140 files, by TFTP. The
+server answers both, from the system disk of the satellite that it serves. No OpenVMS node with
+TCP/IP Services is needed to boot the satellite.
+
+1. Prepare the system disk and the root of the satellite on an OpenVMS I64 node. The easy way is
+   `CLUSTER_CONFIG_LAN`, ADD, on the node whose system disk the server is to serve: it makes the
+   root, its parameter file `IA64VMSSYS.PAR`, and gives the boot files the protection their TFTP
+   needs. It wants the BOOTP and TFTP of TCP/IP Services running while it adds the satellite. Then
+   shut the node down and serve its disk:
+
+```
+/ALLOCLASS=42
+/UNIT0=DKA0,/srv/mscphub/i64sys.img
+```
+
+   The disk the node booted from, `DKA0`, is `$42$DKA0:` for the satellite. A root made by hand
+   follows steps 3 and 4 of Section 4.12, with `IA64VMSSYS.PAR` for `ALPHAVMSSYS.PAR`.
+2. Name the satellite and the address the server answers at:
+
+```
+/IPADDRESS=192.168.42.5/24
+/SATELLITE0=08-00-2B-E5-44-10,DKA0,SYS10,IP=192.168.42.10
+```
+
+   The LAN address is the one of the adapter the satellite boots from, `IP=` the address BOOTP gives
+   it. Add `/GATEWAY` if the satellite needs a router.
+3. Give the cluster votes. When no OpenVMS node with votes is a member, give the satellite its own,
+   on an OpenVMS node that has the disk mounted (or on the node of step 1 before it shuts down):
+
+```
+$ MCR SYSGEN
+SYSGEN> USE $42$DKA0:[SYS10.SYSEXE]IA64VMSSYS.PAR
+SYSGEN> SET VOTES 1
+SYSGEN> SET EXPECTED_VOTES 1
+SYSGEN> WRITE $42$DKA0:[SYS10.SYSEXE]IA64VMSSYS.PAR
+SYSGEN> EXIT
+```
+
+   and put the same two lines, `VOTES = 1` and `EXPECTED_VOTES = 1`, in
+   `[SYS10.SYSEXE]MODPARAMS.DAT`, so that AUTOGEN keeps them.
+4. See that nothing else answers the satellite by BOOTP: remove it from the BOOTP of its old boot
+   node (`TCPIP REMOVE BOOTP`), and keep its adapter out of any DHCP server of the LAN.
+5. Restart the server. Its log says `SATIPCFG` for the satellite and `IPCFG` for the address.
+6. Boot the satellite from the LAN entry of its Boot Manager. `BOOT_OPTIONS.COM` on OpenVMS makes the
+   entry, with the memory disk flag `0x200000`, when it is asked "Will EIA0 be used for cluster
+   satellite boot?".
+
+The log of the server then shows `BOOTP` when the firmware asks for its address, `TFTPLOAD` ten
+seconds after the loader has read its files, and then `SOLICIT` and the rest of Section 4.12.
+
+BOOTP gives the satellite its address, the mask of /IPADDRESS, the router of /GATEWAY, the server as
+the TFTP server, and the boot file `$42$DKA0:[SYS10.SYSCOMMON.SYSEXE]VMS_LOADER.EFI`: the full cluster
+name of the unit, which the loader and IPB need, and the root. To a DHCP request the server answers
+in DHCP, an OFFER and an ACK; to a BOOTP one, in BOOTP. The loader then asks by TFTP for each file in
+the root first and then in `VMS$COMMON`, by its OpenVMS name. The server reads every file from the
+disk when it is asked for, so there is no copy to keep up to date: after a patch or AUTOGEN the
+satellite gets the new files. A file of variable records, such as `SYS$MEMORYDISK.DAT`, is sent as a
+stream of lines, as TCP/IP Services sends it.
+
+**Note**
+
+> * The server speaks IPv4 itself on its interface, as it speaks NISCA and MOP. The address of
+>   /IPADDRESS is not an address of Linux: do not give it to Linux, nor to any other host. The
+>   server answers ARP for it, BOOTP of the adapters of /SATELLITE*n* with `IP=`, and TFTP of their
+>   addresses - nothing else, not even a ping.
+> * The server reads only the files TCP/IP Services would read for its TFTP: those of WORLD read,
+>   and those of an ACE that gives read to `VMS$SATELLITE_ACCESS` (`IA64VMSSYS.PAR` and
+>   `CLUSTER_AUTHORIZE.DAT`, as `CLUSTER_CONFIG_LAN` sets them), and only on the unit of the
+>   satellite. `SYSUAF.DAT` is not given to anyone.
+> * The satellite must be on the LAN of the server: a request passed on by a relay agent is not
+>   answered.
+> * TFTP is of the mode `octet` and takes the options `blksize`, `tsize` and `timeout`. The loader of OpenVMS V8.4 asks only for
+>   `tsize`, so its files come in blocks of 512 octets; the block number goes on past 65535.
+> * A file is read whole into memory, 64 MB at most, when it is asked for; the server does nothing
+>   else while it reads it - milliseconds for the files of a boot, which are in the page cache.
 
 ---
 
@@ -954,6 +1035,11 @@ severity F.
     Specifies how many commands each OpenVMS node may have in progress on the disk server at a time,
     2 to 64. The value is given to a node when it connects. The default is 16.
 
+  **/GATEWAY=***address*
+
+    Specifies the router BOOTP gives the Integrity satellites of `IP=`, an address of the network of
+    /IPADDRESS (Section 4.14). By default none is given.
+
   **/GROUP=***n*
 
     Specifies the cluster group number, 1 to 65279. Required.
@@ -966,6 +1052,13 @@ severity F.
 
     Specifies the Linux interface the OpenVMS nodes are on: an Ethernet adapter, a bridge, a VLAN, a
     tap device in a bridge. Required. The MAC address of the interface is not changed.
+
+  **/IPADDRESS=***address*[`/`*prefix*]
+
+    Specifies the IPv4 address the server answers BOOTP and TFTP at for the Integrity satellites of
+    `IP=`, and the length of the mask of their network, 8 to 30; the default is 24. Required when
+    such a satellite is given (Section 4.14). The server speaks IPv4 itself on /INTERFACE: the
+    address must be no address of Linux and of no other host.
 
   **/LISTEN=***seconds*
 
@@ -996,14 +1089,19 @@ severity F.
     The server only listens and reports the nodes it sees. It opens no channel and sends nothing at
     all. Safe on any LAN, for example to look at a production cluster.
 
-  **/SATELLITE0=***address*,*unit*,*root*[,`SIZE=`*octets*] ... **/SATELLITE7=**...
+  **/SATELLITE0=***address*,*unit*,*root*[,`SIZE=`*octets* | ,`IP=`*address*] ... **/SATELLITE7=**...
 
-    Specifies a diskless Alpha satellite the server loads by MOP (Section 4.13). *address* is the
-    LAN address of the adapter the satellite boots from, `08-00-2B-E5-43-01`. *unit* is the unit of
-    its system disk, one of /UNIT*n*, writable. *root* is its root on that disk, `SYS10`; `<SYS10.>`
-    and `[SYS10.]`, as LANCP has it, are taken too.
+    Specifies a diskless satellite the server loads: an Alpha by MOP (Section 4.13), an Integrity
+    by BOOTP and TFTP when `IP=` is given (Section 4.14). *address* is the LAN address of the
+    adapter the satellite boots from, `08-00-2B-E5-43-01`. *unit* is the unit of its system disk,
+    one of /UNIT*n*, writable. *root* is its root on that disk, `SYS10`; `<SYS10.>` and `[SYS10.]`,
+    as LANCP has it, are taken too.
 
     `SIZE=`*octets* - the octets of the image in a MOP message, 246 to 1482. The default is 1482.
+
+    `IP=`*address* - an Integrity satellite and the IPv4 address BOOTP gives it, in the network of
+    /IPADDRESS. The server reads `[`*root*`.SYSCOMMON.SYSEXE]VMS_LOADER.EFI` and the files of its
+    memory disk from the disk at every boot.
 
     The server reads `[`*root*`.SYSCOMMON.SYSEXE]APB.EXE` and `[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` from
     the disk at every boot. Only the adapters of /SATELLITE*n* are answered.
@@ -1278,6 +1376,16 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* None.
 
+**BOOTP**, information
+
+    satellite *address* (*name*) asks by *BOOTP|DHCP*: given *address*, boot file *file*
+
+    *Explanation:* The firmware of an Integrity satellite of /SATELLITE*n* asks for its address. The
+    server has given it, and the name of its loader. TFTP follows; `TFTPLOAD` tells what the
+    satellite has read.
+
+    *User Action:* None.
+
 **CHCLOSE**, warning
 
     channel to node *name* (*systemid*) is closed: *reason*
@@ -1366,6 +1474,15 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* Check the Linux disk under the unit: a dead disk, a lost iSCSI or NFS server. Look
     at `dmesg`.
+
+**IPCFG**, information
+
+    BOOTP and TFTP of the satellites at *address*/*n* on *interface*, gateway *address*
+
+    *Explanation:* The server answers the Integrity satellites of `IP=` at this address (/IPADDRESS,
+    /GATEWAY).
+
+    *User Action:* None. The address must be no address of Linux, and of no other host.
 
 **IVPARAM**, fatal
 
@@ -1461,7 +1578,7 @@ puts in; "(s)" stands for a plural ending.
     says why: a file of the root is not on the disk, the disk is not ODS-2 or ODS-5, `VAXCLUSTER`
     is 0 in the parameter file, the console stopped answering, or it asked for a message out of
     order. A failure before the load starts is not answered at all: the console asks again, and
-    another MOP server may load it. The same failure is told once a minute.
+    another MOP server may load it. The failures of one satellite are told once a minute.
 
     *User Action:* Check the root: the files are `[`*root*`.SYSCOMMON.SYSEXE]APB.EXE` and
     `[`*root*`.SYSEXE]ALPHAVMSSYS.PAR` of the unit of /SATELLITE*n* (Section 4.13).
@@ -1614,6 +1731,15 @@ puts in; "(s)" stands for a plural ending.
 
     *User Action:* None.
 
+**SATIPCFG**, information
+
+    satellite *address* is loaded by BOOTP and TFTP as *address* from unit *disk*, root *root*
+
+    *Explanation:* An Integrity satellite of /SATELLITE*n*: the server gives it this address and
+    loads it from that disk and root.
+
+    *User Action:* None.
+
 **SHUTDOWN**, information
 
     signal *n* received, the server is stopping
@@ -1677,6 +1803,40 @@ puts in; "(s)" stands for a plural ending.
         ioctl(SIOCGIFINDEX), errno=19   there is no such interface
 
     *User Action:* Correct what the call and errno name.
+
+**TFTPFAIL**, warning
+
+    satellite *address* (*name*) is not given *file*: *reason*
+
+    *Explanation:* A request of an Integrity satellite is refused. The *reason* says why: the file is
+    on another unit than the satellite's, it may not be read (no WORLD read, no ACE of
+    `VMS$SATELLITE_ACCESS`), it is larger than 64 MB, the disk cannot be read, a record runs past
+    the end of the file; or the satellite asks DHCP for another address than its `IP=` (a NAK). A
+    file that is not in the root is no failure: the loader looks in the root first, then in
+    `VMS$COMMON`. The failures of one satellite are told once a minute.
+
+    *User Action:* Check the root and the protection of its files (Section 4.14). On an OpenVMS
+    node, the option "Reset an IA64 satellite node's boot environment file protections" of
+    `CLUSTER_CONFIG_LAN` sets them.
+
+**TFTPLOAD**, information
+
+    satellite *address* (*name*) has read *n* files, *n* octets, by TFTP in *n* s; *n* not found
+
+    *Explanation:* The TFTP of a boot of an Integrity satellite has been quiet for 10 seconds: so much
+    it has read, its loader and its memory disk. The files not found are the ones the loader looked
+    for in the root before `VMS$COMMON`, and the optional ones: about 150 for OpenVMS V8.4. IPB and
+    `SOLICIT` follow.
+
+    *User Action:* None.
+
+**TFTPSTATS**, information
+
+    satellite *address* (*name*): *n* BOOTP answers, *n* files, *n* octets, *n* not found, *n* refused, *n* sent again
+
+    *Explanation:* The counters of an Integrity satellite of /SATELLITE*n*, on SIGUSR1.
+
+    *User Action:* None.
 
 **TRSTATS**, information
 
@@ -1886,6 +2046,19 @@ When the server loads the satellite (Section 4.13):
 * `MOPVOL`, but no `MOPLOAD`: another MOP server, the LANCP of an OpenVMS node, answered first and
   loads the satellite. Clear the node there (Section 4.13, step 3).
 
+When the server loads an Integrity satellite (Section 4.14):
+
+* No `BOOTP` when the firmware boots: the address of /SATELLITE*n* is not the one of the adapter, the
+  satellite is not on the LAN of the server, or its Boot Manager entry is not the one of the LAN.
+  `tcpdump -i eth1 ether host 08-00-2B-E5-44-10` shows what it sends.
+* The firmware says it got another address or another boot file: another BOOTP or DHCP server
+  answered first. Remove the satellite there (Section 4.14, step 4).
+* `BOOTP`, but the firmware does not read the loader: the address of /IPADDRESS is used by Linux or
+  by another host. `ip -4 addr` on the server must not show it.
+* `TFTPFAIL`: its reason tells what to mend.
+* `TFTPLOAD`, but the console of the satellite says `IPB-F-BADSATDEV`: the unit is not served under
+  the name the root was made for; see `UNITCFG` and /ALLOCLASS.
+
 ## 7.10 Collecting Information for a Report
 
 ```
@@ -1945,8 +2118,11 @@ Add the parameter file, without the line /AUTHORIZE. For a protocol problem, run
 | Modbus/TCP clients at a time | 8 |
 | Copy of the counters for MHMON and Modbus | Every 100 ms |
 | LAN adapters | 1 |
-| Satellites loaded by MOP | 8 (`/SATELLITE0` to `/SATELLITE7`) |
+| Satellites loaded by MOP, BOOTP and TFTP | 8 in all (`/SATELLITE0` to `/SATELLITE7`) |
 | Octets of the image in a MOP message | 246 to 1482 |
+| TFTP transfers at a time | 8, of all the satellites; a ninth ends the one longest silent |
+| A file sent by TFTP | 64 MB |
+| TFTP block | 8 to 8192 octets and what the MTU holds; 512 without `blksize` |
 
 ---
 
@@ -2215,6 +2391,26 @@ The console of the AlphaServer asked in MOP Version 4 only.
 Under emulation the OpenVMS node is the slowest part of every test, and on real Alpha, Integrity or
 x86 computers the times are different. What the tables show is the comparison: the same node, the
 same data, three kinds of disk.
+
+
+## C.11 An Integrity Satellite Loaded by the Server
+
+On 24-NOV-2026 a diskless emulated Integrity server (IA64Emu), I64S1, booted OpenVMS I64 Version 8.4
+from MSCPHUB Version X.01-25 alone: the server, HUB1, answered its BOOTP, sent it its loader and its
+memory disk by TFTP, and served its system disk, `$42$DKA0`, a copy of the disk of a node on which
+`CLUSTER_CONFIG_LAN` had added the satellite (root `SYS10`, `VOTES 1`). No OpenVMS node was on the
+LAN; the satellite formed its cluster alone. The same was done on x86-64 and on AArch64 Linux.
+
+| Test | What happened |
+|---|---|
+| Boot | `BOOTP` (DHCP), then 142 files, 75 398 929 octets, by TFTP in 40 to 41 s; 153 files looked for in the root and not found; IPB 44 to 45 s after the satellite started; `SOLICIT` "served", a member 166 s after its start |
+| The disk | `SHOW DEVICE D` on I64S1: `$42$DKA0: (HUB1) Mounted`, its system disk |
+| Boot again | The same: the files read from the disk anew, nothing refused, nothing sent again |
+| The files | The requests of a boot by TCP/IP Services V5.7, recorded on the LAN, sent to the server again: every file it sent came the same octet for octet, 75 398 929 in all; the 153 it did not find, the server did not find either |
+
+The firmware asked `blksize` 1468 for the loader; the loader of V8.4 asks only `tsize`, so its files
+came in blocks of 512 octets. TCP/IP Services takes no TFTP option and sends from the CPU of its node:
+the same boot from an emulated OpenVMS boot node took 12 minutes to IPB.
 
 ---
 

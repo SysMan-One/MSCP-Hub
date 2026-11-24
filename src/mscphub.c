@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X.01-24ECO03"
-#define	__REV__		"1.24.3"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -85,6 +85,9 @@
 **		12-NOV-2026	CLD	X.01-24ECO03 : the IDENT in the form X.aa-bbECOcc, the ECO of two
 **						digits; the release is signed (SHA256SUMS.minisig), StarLet and
 **						HELP of the build are pinned commits.
+**		24-NOV-2026	CLD	X.01-25 : the BOOTP and TFTP server of a diskless I64 satellite
+**					(IP= of /SATELLITEn, /IPADDRESS, /GATEWAY): its loader and its
+**					memory disk read from its system disk.
 **
 **--
 */
@@ -142,6 +145,8 @@ static	const OPTS	s_opts [] = {
 	{ { $ASCINI("satellite5") },	&s_cfg.sat[5],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("satellite6") },	&s_cfg.sat[6],	ASC$K_SZ,	OPTS$K_STR },
 	{ { $ASCINI("satellite7") },	&s_cfg.sat[7],	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("ipaddress") },	&s_cfg.ipaddr,	ASC$K_SZ,	OPTS$K_STR },
+	{ { $ASCINI("gateway") },	&s_cfg.gateway,	ASC$K_SZ,	OPTS$K_STR },
 
 	{ { 0, { 0 } }, NULL, 0, 0 }					/* OPTS_NULL, braced for -Wmissing-braces	*/
 	};
@@ -151,7 +156,8 @@ enum	{
 	MH$K_EV_TIMER,
 	MH$K_EV_SIGNAL,
 	MH$K_EV_BK,
-	MH$K_EV_MOP				/* ... + MH$K_MOP_V3, MH$K_MOP_V4		*/
+	MH$K_EV_MOP,				/* ... + MH$K_MOP_V3, MH$K_MOP_V4		*/
+	MH$K_EV_IP	= MH$K_EV_MOP + MH$K_MOP_NFMT	/* ... + MH$K_IP_IP, MH$K_IP_ARP		*/
 	};
 
 
@@ -317,8 +323,9 @@ unsigned		l_ncon;
 		s_port.blk_bad);
 
 	mh$mscp_stats(&s_port);
+	mh$mop_stats(&s_port);
 
-	return	mh$mop_stats(&s_port);
+	return	mh$tftp_stats(&s_port);
 }
 
 
@@ -400,12 +407,23 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 	/*
 	**  The MOP server, when satellites are loaded
 	*/
-	for ( unsigned i = 0; s_port.nsat && (i < MH$K_MOP_NFMT); i++ )
+	for ( unsigned i = 0; (s_port.mopsd[0] >= 0) && (i < MH$K_MOP_NFMT); i++ )
 		{
 		l_ev.data.u32 = MH$K_EV_MOP + i;
 
 		if ( epoll_ctl(l_ep, EPOLL_CTL_ADD, s_port.mopsd[i], &l_ev) )
 			return	$MHMSG(MH$_SYSERR, "epoll_ctl(MOP)", errno, strerror(errno));
+		}
+
+	/*
+	**  BOOTP and TFTP, when I64 satellites are loaded
+	*/
+	for ( unsigned i = 0; (s_port.ipsd[MH$K_IP_IP] >= 0) && (i < MH$K_IP_NSOCK); i++ )
+		{
+		l_ev.data.u32 = MH$K_EV_IP + i;
+
+		if ( epoll_ctl(l_ep, EPOLL_CTL_ADD, s_port.ipsd[i], &l_ev) )
+			return	$MHMSG(MH$_SYSERR, "epoll_ctl(IP)", errno, strerror(errno));
 		}
 
 	for ( ;; )
@@ -462,6 +480,7 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 						mh$cc_tick(&s_port);
 
 					mh$mop_tick(&s_port);
+					mh$tftp_tick(&s_port);
 
 					mh$bk_tick(&s_port);
 					mh$stat_tick(&s_port);
@@ -480,6 +499,18 @@ int				l_ep, l_tfd, l_sfd, l_n, l_status = STS$K_SUCCESS;
 							break;
 
 						mh$mop_input(&s_port, l_fmt, l_frame, l_len);
+						}
+
+					break;
+
+				case	MH$K_EV_IP + MH$K_IP_IP:
+				case	MH$K_EV_IP + MH$K_IP_ARP:
+					for ( unsigned l_sock = l_evs[i].data.u32 - MH$K_EV_IP; ; )
+						{
+						if ( !(1 & mh$lan_ip_recv(&s_port, l_sock, l_frame, sizeof(l_frame), &l_len)) || !l_len )
+							break;
+
+						mh$tftp_input(&s_port, l_sock, l_frame, l_len);
 						}
 
 					break;
@@ -571,8 +602,21 @@ int	l_status;
 	if ( !(1 & mh$mop_init(&s_port, &s_cfg)) )
 		return	1;
 
-	if ( s_port.nsat && !(1 & mh$lan_mop_open(&s_port)) )
+	if ( !(1 & mh$tftp_init(&s_port, &s_cfg)) )
 		return	1;
+
+	/*
+	**  The sockets of MOP for the Alpha satellites, of IPv4 and ARP for
+	**  the I64 ones
+	*/
+	for ( unsigned i = 0; i < s_port.nsat; i++ )
+		{
+		if ( !s_port.sats[i].ip && (s_port.mopsd[0] < 0) && !(1 & mh$lan_mop_open(&s_port)) )
+			return	1;
+
+		if ( s_port.sats[i].ip && (s_port.ipsd[MH$K_IP_IP] < 0) && !(1 & mh$lan_ip_open(&s_port)) )
+			return	1;
+		}
 
 	/*
 	**  The statistics block for MHMON and Modbus: the server serves its

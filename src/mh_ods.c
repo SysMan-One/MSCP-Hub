@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHODS"
-#define	__IDENT__	"X01-22"
-#define	__REV__		"1.22.0"
+#define	__IDENT__	"X.01-25"
+#define	__REV__		"1.25.0"
 
 /*
 **++
@@ -52,6 +52,8 @@
 **
 **		25-OCT-2026	RRL	X01-22 : Initial version: the files of a satellite read
 **						from its system disk.
+**		24-NOV-2026	CLD	X.01-25 : the record attributes, the protection and the ACE
+**					of VMS$SATELLITE_ACCESS of a file, for MHTFTP.
 **
 **--
 */
@@ -86,6 +88,7 @@
 #define	FH2$B_IDOFFSET		0x000
 #define	FH2$B_MPOFFSET		0x001
 #define	FH2$B_ACOFFSET		0x002
+#define	FH2$B_RSOFFSET		0x003
 #define	FH2$W_STRUCLEV		0x006
 #define	FH2$W_FID_NUM		0x008
 #define	FH2$W_FID_SEQ		0x00A
@@ -95,11 +98,27 @@
 #define	FH2$B_EX_FIDNMX		0x013
 #define	FH2$W_RECATTR		0x014
 #define	FH2$B_MAP_INUSE		0x03A
+#define	FH2$W_FILEPROT		0x040
 #define	FH2$W_CHECKSUM		0x1FE
 
 #define	FAT$W_HIBLKH		(FH2$W_RECATTR + 0x04)	/* The VBNs are two words, the high one first	*/
 #define	FAT$W_EFBLKH		(FH2$W_RECATTR + 0x08)
 #define	FAT$W_FFBYTE		(FH2$W_RECATTR + 0x0C)
+#define	FAT$B_RTYPE		(FH2$W_RECATTR + 0x00)	/* The type in the low four bits		*/
+#define	FAT$B_RATTRIB		(FH2$W_RECATTR + 0x01)
+#define	FAT$B_VFCSIZE		(FH2$W_RECATTR + 0x0F)
+
+/*
+**  An ACE of the ACL area of a header: of an identifier (KEYID), its
+**  access mask, the identifiers it is of
+*/
+#define	ACE$B_SIZE		0x00
+#define	ACE$B_TYPE		0x01
+#define	ACE$L_ACCESS		0x04
+#define	ACE$L_KEY		0x08
+#define	ACE$C_KEYID		1
+#define	ACE$M_READ		0x01
+#define	ODS$K_SATACCESS		0x8000000AU	/* VMS$SATELLITE_ACCESS, KGB$K_SAT_ACCESS_ID	*/
 
 /*
 **  The retrieval pointers: the format in the two high bits of the first word
@@ -132,6 +151,7 @@ enum	{
 
 static	int	s_mh$ods_hdr	(MH$ODS *a_ods, uint32_t a_num, uint16_t a_seq, uint8_t *a_hdr);
 static	int	s_mh$ods_map	(MH$ODS *a_ods, uint32_t a_num, uint16_t a_seq, MH$ODSFILE *a_file);
+static	int	s_mh$ods_satacl	(const uint8_t *a_hdr);
 
 
 
@@ -502,6 +522,46 @@ int		l_status;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	Does an ACE of the ACL area of a header give read to the identifier
+**	VMS$SATELLITE_ACCESS: an ACE of an identifier, that one among its
+**	identifiers, read in its access mask.
+**
+**  FORMAL PARAMETERS:
+**
+**	a_hdr		The first header of a file
+**
+**  RETURN VALUE:
+**	1 - it does; 0 - not, or no ACL.
+**--
+*/
+static	int	s_mh$ods_satacl	(
+	const	uint8_t *	a_hdr
+			)
+{
+unsigned	l_at = 2u * a_hdr[FH2$B_ACOFFSET], l_end = 2u * a_hdr[FH2$B_RSOFFSET], l_sz;
+
+	if ( (l_end > FH2$W_CHECKSUM) || (l_at < 0x3C) )
+		return	0;
+
+	for ( ; (l_at + ACE$L_KEY + 4 <= l_end) && ((l_sz = a_hdr[l_at + ACE$B_SIZE]) >= ACE$L_KEY + 4); l_at += l_sz )
+		{
+		if ( (a_hdr[l_at + ACE$B_TYPE] != ACE$C_KEYID) || !(nisca$get32(a_hdr + l_at + ACE$L_ACCESS) & ACE$M_READ) )
+			continue;
+
+		for ( unsigned l_k = l_at + ACE$L_KEY; (l_k + 4 <= l_at + l_sz) && (l_k + 4 <= l_end); l_k += 4 )
+			if ( nisca$get32(a_hdr + l_k) == ODS$K_SATACCESS )
+				return	1;
+		}
+
+	return	0;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	Build the map of a file: the retrieval pointers of its header and of
 **	its extension headers, the VBN of every extent; the end of file from
 **	the record attributes.
@@ -544,13 +604,19 @@ int		l_status;
 			return	l_status;
 
 		/*
-		**  The end of file is in the first header
+		**  The end of file, the record attributes, the protection and
+		**  the ACL are in the first header
 		*/
 		if ( !l_seg )
 			{
 			l_map.efblk	= ((uint32_t) nisca$get16(l_hdr + FAT$W_EFBLKH) << 16) | nisca$get16(l_hdr + FAT$W_EFBLKH + 2);
 			l_map.ffbyte	= nisca$get16(l_hdr + FAT$W_FFBYTE);
 			l_map.hiblk	= ((uint32_t) nisca$get16(l_hdr + FAT$W_HIBLKH) << 16) | nisca$get16(l_hdr + FAT$W_HIBLKH + 2);
+			l_map.rtype	= l_hdr[FAT$B_RTYPE] & 0x0F;
+			l_map.rattrib	= l_hdr[FAT$B_RATTRIB];
+			l_map.vfcsize	= l_hdr[FAT$B_VFCSIZE];
+			l_map.fileprot	= nisca$get16(l_hdr + FH2$W_FILEPROT);
+			l_map.satacl	= s_mh$ods_satacl(l_hdr);
 			}
 
 		l_mp	= 2u * l_hdr[FH2$B_MPOFFSET];
