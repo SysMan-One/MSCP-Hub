@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X.01-25"
-#define	__REV__		"1.25.0"
+#define	__IDENT__	"X.01-25ECO01"
+#define	__REV__		"1.25.1"
 
 /*
 **++
@@ -88,6 +88,9 @@
 **		24-NOV-2026	CLD	X.01-25 : the BOOTP and TFTP server of a diskless I64 satellite
 **					(IP= of /SATELLITEn, /IPADDRESS, /GATEWAY): its loader and its
 **					memory disk read from its system disk.
+**		24-NOV-2026	RRL	X.01-25ECO01 : a malformed /AUTHORIZE is refused before the LAN is
+**					touched, and its value (the password hash of the cluster) is
+**					not shown in the message.
 **
 **--
 */
@@ -184,6 +187,8 @@ enum	{
 static	int	s_mh$check_cfg	(void)
 {
 char	l_val [32];
+uint8_t	l_auth [MH$K_SZ_AUTH];
+int	l_status;
 
 	if ( !$ASCLEN(&s_cfg.ifname) )
 		return	$MHMSG(MH$_NOPARAM, "INTERFACE");
@@ -199,6 +204,16 @@ char	l_val [32];
 
 	if ( !$ASCLEN(&s_cfg.auth) )
 		return	$MHMSG(MH$_NOPARAM, "AUTHORIZE");
+
+	/*
+	**  The password hash of the cluster: 16 hexadecimal digits.  A wrong one
+	**  is not echoed - it is the secret of the cluster, or close to it
+	*/
+	l_status = mh$hex2bin($ASCPTR(&s_cfg.auth), $ASCLEN(&s_cfg.auth), l_auth, MH$K_SZ_AUTH);
+	explicit_bzero(l_auth, sizeof(l_auth));
+
+	if ( !(1 & l_status) )
+		return	$MHMSG(MH$_IVPARAM, "(not shown)", "AUTHORIZE", "16 hexadecimal digits are expected");
 
 	/*
 	**  SCSNODE: 1 - 6 characters, A-Z, 0-9, $, _ ; upper case

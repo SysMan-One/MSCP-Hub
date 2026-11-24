@@ -15,6 +15,7 @@
 #	MODIFICATION HISTORY:
 #
 #		20-OCT-2026	RRL	X01-10 : Initial public version.
+#		24-NOV-2026	RRL	X.01-25ECO01 : a malformed /AUTHORIZE is refused, its value not shown.
 #
 
 MH=$1
@@ -49,6 +50,20 @@ expect "IVPARAM.*/LISTEN" $ALL /LISTEN=0
 expect "IVPARAM.*/CREDITS" $ALL /CREDITS=65
 expect "IVPARAM.*/TIMEZONE" $ALL /TIMEZONE=MSK
 expect "IVPARAM.*/TIMEZONE" $ALL /TIMEZONE=+15:00
+expect "IVPARAM.*/AUTHORIZE" $ALL /AUTHORIZE=5A3C9E17000000
+expect "IVPARAM.*/AUTHORIZE" $ALL /AUTHORIZE=5A3C9E170000000G
+
+# the value of a malformed /AUTHORIZE (the password hash of the cluster) is never shown
+for BAD in 5A3C9E17000000 5A3C9E170000000G
+do
+	OUT=`"$MH" $ALL /AUTHORIZE=$BAD 2>&1`
+
+	if echo "$OUT" | grep -q -- "$BAD"
+	then
+		echo "%PARAMS-E-FAILED, /AUTHORIZE=$BAD : the value is shown: $OUT"
+		FAILS=`expr $FAILS + 1`
+	fi
+done
 
 if [ $FAILS -ne 0 ]
 then

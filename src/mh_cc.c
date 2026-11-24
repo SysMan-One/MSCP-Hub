@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X01-23"
-#define	__REV__		"1.23.0"
+#define	__IDENT__	"X.01-25ECO01"
+#define	__REV__		"1.25.1"
 
 /*
 **++
@@ -79,6 +79,8 @@
 **						owner keeps the circuit; the circuit goes by the open channel
 **						of the largest buffer, with the last one closed; a SOLICIT_SRV
 **						closes the other channels of the node.
+**		24-NOV-2026	RRL	X.01-25ECO01 : a malformed /AUTHORIZE: its value, the password
+**						hash of the cluster, is not shown in the message.
 **
 **--
 */
@@ -212,7 +214,7 @@ unsigned	l_len, l_mtu;
 		return	l_status;
 
 	if ( !(1 & mh$hex2bin($ASCPTR(&a_cfg->auth), $ASCLEN(&a_cfg->auth), a_port->auth, MH$K_SZ_AUTH)) )
-		return	$MHMSG(MH$_IVPARAM, $ASCPTR(&a_cfg->auth), "AUTHORIZE", "16 hexadecimal digits are expected");
+		return	$MHMSG(MH$_IVPARAM, "(not shown)", "AUTHORIZE", "16 hexadecimal digits are expected");
 
 	/*
 	**  NODENAME of CC: ASCIC with a length octet of 6, blank-padded, the
