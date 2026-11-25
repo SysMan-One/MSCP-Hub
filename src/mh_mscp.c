@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMSCP"
-#define	__IDENT__	"X01-21"
-#define	__REV__		"1.21.0"
+#define	__IDENT__	"X01-22"
+#define	__REV__		"1.22.0"
 
 /*
 **++
@@ -82,6 +82,9 @@
 **		21-OCT-2026	RRL	X01-15 : ZERO of a file up to 1 MB: zeros written, not
 **						fallocate (unwritten extents); BKSTATS counts ZERO.
 **		25-OCT-2026	RRL	X01-21 : MH$MSCP_CHECK_SERVICE: the system disk a satellite asks for.
+**		25-NOV-2026	RRL	X01-22 : the walk of GET UNIT STATUS + NEXT UNIT gives a satellite of
+**						/SATELLITEn its system disk first (an SMP satellite crashed
+**						MSCPCLASS when its boot device was not the first unit).
 **
 **--
 */
@@ -719,6 +722,87 @@ MH$UNIT	*l_unit = &a_port->units[a_idx];
 	a_end[MSCP$K_RCT_CPYS] = 0;
 
 	return	s_mh$mscp_isonline(l_unit, a_cdt) ? MSCP$K_ST_SUCC : MSCP$K_ST_AVLBL;
+}
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
+**	The order of the walk of the units (GET UNIT STATUS with NEXT UNIT)
+**	for a client: a satellite of ours (/SATELLITEn of an adapter of the
+**	node) is given its system disk first, then the other units by index.
+**	DUDRIVER of the satellite (DUTU$POLL_FOR_UNITS) wants the boot device
+**	before any other unit of the server: a new UCB of an earlier unit is
+**	linked by a fork thread that holds the I/O database mutex across a
+**	FORK, and when the end message of the boot device comes first on an
+**	SMP satellite, DO_ORIG_UCB finds the mutex taken and crashes MSCPCLASS
+**	(MSCP_INITING still set; IA64Emu 48-31).
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_node		The node of the connection
+**
+**  RETURN VALUE:
+**	The index of the unit to give first; -1 - none: the order of the
+**	indexes.
+**--
+*/
+static	int	s_mh$mscp_walkfirst	(
+	const	MH$PORT *	a_port,
+	const	MH$NODE *	a_node
+			)
+{
+const	MH$NODE	*l_own = $MHOWNER(a_node);
+
+	for ( unsigned i = 0; i < a_port->nsat; i++ )
+		{
+		if ( a_port->sats[i].unit >= a_port->nunit )
+			continue;
+
+		for ( unsigned j = 0; j < a_port->nnode; j++ )
+			{
+			const	MH$NODE	*l_n = &a_port->nodes[j];
+
+			if ( ((l_n == l_own) || (l_n->owner == l_own)) && !memcmp(l_n->mac, a_port->sats[i].mac, NISCA$K_SZ_MAC) )
+				return	(int) a_port->sats[i].unit;
+			}
+		}
+
+	return	-1;
+}
+
+/*
+**  The walk: the unit at a position, the position of a unit (a_first of
+**  S_MH$MSCP_WALKFIRST at the head, the others by index)
+*/
+static	unsigned	s_mh$mscp_walkidx	(
+		int		a_first,
+		unsigned	a_pos
+			)
+{
+	if ( a_first < 0 )
+		return	a_pos;
+
+	if ( !a_pos )
+		return	(unsigned) a_first;
+
+	return	(a_pos - 1 < (unsigned) a_first) ? a_pos - 1 : a_pos;
+}
+
+static	unsigned	s_mh$mscp_walkpos	(
+		int		a_first,
+		unsigned	a_idx
+			)
+{
+	if ( a_first < 0 )
+		return	a_idx;
+
+	if ( a_idx == (unsigned) a_first )
+		return	0;
+
+	return	(a_idx < (unsigned) a_first) ? a_idx + 1 : a_idx;
 }
 
 
@@ -2225,17 +2309,34 @@ MH$HRB		*l_hrb;
 			if ( l_mod & MSCP$M_MD_NXUNT )
 				{
 				/*
-				**  The walk: from unit 1 or 0x4000 + n on; past the last -
-				**  UNIT 0 and a clean OFFLN
+				**  The walk: from unit 1 or 0x4000 + n on, the client asks
+				**  for the unit after the one it was given; past the last -
+				**  UNIT 0 and a clean OFFLN.  A satellite of ours gets its
+				**  system disk first (S_MH$MSCP_WALKFIRST), the SLUN numbers
+				**  stay those of the units.
 				*/
-				l_idx = (l_unitno & MSCP$M_UNIT_SLUN) ? (l_unitno & ~MSCP$M_UNIT_SLUN) : 0;
+				int		l_first = s_mh$mscp_walkfirst(a_port, a_node);
+				unsigned	l_k = l_unitno & ~MSCP$M_UNIT_SLUN, l_pos;
 
-				if ( (l_unitno & 0x8000) || (!(l_unitno & MSCP$M_UNIT_SLUN) && (l_unitno != 1)) || (l_idx >= a_port->nunit) )
+				if ( (l_unitno & 0x8000) || (!(l_unitno & MSCP$M_UNIT_SLUN) && (l_unitno != 1))
+					|| ((l_unitno & MSCP$M_UNIT_SLUN) && (l_k > a_port->nunit)) )
+					l_pos = a_port->nunit;
+				else if ( !(l_unitno & MSCP$M_UNIT_SLUN) || !l_k )
+					l_pos = 0;
+				else	l_pos = s_mh$mscp_walkpos(l_first, l_k - 1) + 1;
+
+				if ( l_pos >= a_port->nunit )
 					{
 					nisca$put16(l_end + MSCP$K_UNIT, 0);
 					l_status = MSCP$K_ST_OFFLN;
 					break;
 					}
+
+				l_idx = s_mh$mscp_walkidx(l_first, l_pos);
+
+				if ( a_port->trace && (l_first >= 0) )
+					$LOG_FAO(STS$K_INFO, "MSCP walk of !AZ: unit !XW asked, !AZ (position !UL) given, its system disk first",
+						a_node->name, l_unitno, a_port->units[l_idx].dvname, l_pos);
 
 				l_status = s_mh$mscp_gus(a_port, a_cdt, l_idx, l_end);
 				break;

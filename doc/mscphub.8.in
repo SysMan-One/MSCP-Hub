@@ -25,9 +25,10 @@
 .\"		25-OCT-2026	RRL	X01-22 : the MOP server of a satellite, /SATELLITEn.
 .\"		24-NOV-2026	CLD	X.01-25 : BOOTP and TFTP of an I64 satellite: IP=,
 .\"					/IPADDRESS, /GATEWAY.
+.\"		25-NOV-2026	RRL	X.01-25ECO02 : a satellite gets its system disk first.
 .\"
 .\"---
-.TH MSCPHUB 8 "24 November 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.TH MSCPHUB 8 "25 November 2026" "MSCPHUB @MH_IDENT@" "System Administration"
 .SH NAME
 mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
 .SH SYNOPSIS
@@ -143,7 +144,8 @@ of its system disk (writable, ODS\-2 or ODS\-5) and its
 there, SYS10.  The primary bootstrap [SYS10.SYSCOMMON.SYSEXE]APB.EXE and
 the parameter file [SYS10.SYSEXE]ALPHAVMSSYS.PAR are read from the disk
 itself at every boot; the satellite is given the group and the password of
-the server.
+the server, and its system disk first when it asks for the units of the
+server.
 .B SIZE=
 is the octets of the image a MOP message carries, 246 to 1482; default 1482.
 With

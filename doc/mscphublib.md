@@ -269,7 +269,10 @@ as for any satellite.
 The satellite is given the same cluster group and password as the
 server (/GROUP, /AUTHORIZE), and the name of its system disk as the
 server serves it ($42$DKA100). Only the adapters of /SATELLITEn are
-answered.
+answered. When the satellite asks the server for its units (GET UNIT
+STATUS of the next unit), its system disk comes first and the other
+units follow: a satellite with more than one CPU crashes (MSCPCLASS)
+if it first hears of another unit of the server.
 
 The options:
 

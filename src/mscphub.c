@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X.01-25ECO01"
-#define	__REV__		"1.25.1"
+#define	__IDENT__	"X.01-25ECO02"
+#define	__REV__		"1.25.2"
 
 /*
 **++
@@ -91,6 +91,10 @@
 **		24-NOV-2026	RRL	X.01-25ECO01 : a malformed /AUTHORIZE is refused before the LAN is
 **					touched, and its value (the password hash of the cluster) is
 **					not shown in the message.
+**		25-NOV-2026	RRL	X.01-25ECO02 : a satellite of /SATELLITEn is given its system disk
+**					first in the walk of its units (MHMSCP X01-22): an SMP
+**					satellite crashed MSCPCLASS when its boot device was not
+**					the first unit of the server.
 **
 **--
 */

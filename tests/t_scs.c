@@ -585,6 +585,65 @@ int		l_fd;
 	l_e = s_t$mscp(l_port, l_cmd, 28, 1);
 	$CHECK(l_e && !nisca$get16(l_e + MSCP$K_UNIT) && (nisca$get16(l_e + MSCP$K_STATUS) == MSCP$K_ST_OFFLN), "GUS 0x4001 NXUNT: the end, UNIT 0, clean OFFLN");
 
+	/*
+	**  Three units: the walk by index for a client that is no satellite of
+	**  ours; a satellite of /SATELLITEn (the adapter of the node) with its
+	**  system disk the second unit gets it first, then the others (48-31)
+	*/
+	l_port->units[1] = l_port->units[0];
+	l_port->units[2] = l_port->units[0];
+	l_port->units[1].unitid[4] = 0x65;
+	l_port->units[2].unitid[4] = 0x66;
+	l_port->nunit = 3;
+	{
+	static	const uint16_t	s_byidx [4] = { 0x4000, 0x4001, 0x4002, 0 }, s_bysat [4] = { 0x4001, 0x4000, 0x4002, 0 };
+	uint16_t	l_ask = 1;
+	int		l_ok = 1;
+
+	for ( unsigned i = 0; i < 4; i++ )
+		{
+		s_t$cmd(l_cmd, 28, 0x00300001 + i, l_ask, MSCP$K_OP_GTUNT, MSCP$M_MD_NXUNT);
+		l_e = s_t$mscp(l_port, l_cmd, 28, 1);
+		l_ok &= (l_e && (nisca$get16(l_e + MSCP$K_UNIT) == s_byidx[i]));
+		l_ask = (uint16_t) (s_byidx[i] + 1);
+		}
+
+	$CHECK(l_ok, "3 units, no satellite: the walk 0x4000, 0x4001, 0x4002, the end");
+
+	memcpy(l_port->sats[0].mac, l_port->nodes[0].mac, NISCA$K_SZ_MAC);
+	l_port->sats[0].unit = 1;
+	l_port->nsat = 1;
+
+	l_ask = 1;
+	l_ok = 1;
+
+	for ( unsigned i = 0; i < 4; i++ )
+		{
+		s_t$cmd(l_cmd, 28, 0x00400001 + i, l_ask, MSCP$K_OP_GTUNT, MSCP$M_MD_NXUNT);
+		l_e = s_t$mscp(l_port, l_cmd, 28, 1);
+		l_ok &= (l_e && (nisca$get16(l_e + MSCP$K_UNIT) == s_bysat[i])
+			&& ((i == 3) ? (nisca$get16(l_e + MSCP$K_STATUS) == MSCP$K_ST_OFFLN) : !memcmp(l_e + MSCP$K_UNIT_ID, l_port->units[s_bysat[i] & 3].unitid, 8)));
+		l_ask = (uint16_t) (s_bysat[i] + 1);
+		}
+
+	$CHECK(l_ok, "a satellite with its system disk the 2nd unit: 0x4001 first, then 0x4000, 0x4002, the end");
+
+	l_port->sats[0].unit = 2;
+	s_t$cmd(l_cmd, 28, 0x00500001, 0x4003, MSCP$K_OP_GTUNT, MSCP$M_MD_NXUNT);
+	l_e = s_t$mscp(l_port, l_cmd, 28, 1);
+	$CHECK(l_e && (nisca$get16(l_e + MSCP$K_UNIT) == 0x4000), "system disk the last unit: after it (0x4003 asked) the walk goes on with 0x4000");
+	s_t$cmd(l_cmd, 28, 0x00500002, 0x4002, MSCP$K_OP_GTUNT, MSCP$M_MD_NXUNT);
+	l_e = s_t$mscp(l_port, l_cmd, 28, 1);
+	$CHECK(l_e && !nisca$get16(l_e + MSCP$K_UNIT) && (nisca$get16(l_e + MSCP$K_STATUS) == MSCP$K_ST_OFFLN), "... and ends after 0x4001");
+	s_t$cmd(l_cmd, 28, 0x00500003, 0x4004, MSCP$K_OP_GTUNT, MSCP$M_MD_NXUNT);
+	l_e = s_t$mscp(l_port, l_cmd, 28, 1);
+	$CHECK(l_e && !nisca$get16(l_e + MSCP$K_UNIT) && (nisca$get16(l_e + MSCP$K_STATUS) == MSCP$K_ST_OFFLN), "0x4004 NXUNT: past all, the end");
+
+	l_port->nsat = 0;
+	memset(&l_port->sats[0], 0, sizeof(l_port->sats[0]));
+	}
+	l_port->nunit = 1;
+
 	s_t$cmd(l_cmd, 28, 0x00050001, 0, MSCP$K_OP_GTUNT, 0);
 	l_e = s_t$mscp(l_port, l_cmd, 28, 1);
 	$CHECK(l_e && !nisca$get16(l_e + MSCP$K_UNIT) && (nisca$get16(l_e + MSCP$K_STATUS) == MSCP$K_ST_OFFLN), "GUS unit 0, the sign of life: OFFLN");
