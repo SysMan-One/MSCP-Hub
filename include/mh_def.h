@@ -73,6 +73,7 @@
 **					MH$TFTPXFER, the IP sockets of the port; the record
 **					attributes and the access of a file of MHODS; SATIPCFG,
 **					IPCFG, BOOTP, TFTPLOAD, TFTPFAIL, TFTPSTATS.
+**		26-NOV-2026	RRL	X.01-25ECO03 : MH$MOPSAT: HOLDHELLO; MH$K_HOLD_HELLO.
 **
 **--
 */
@@ -258,6 +259,7 @@ enum	{
 #define	MH$K_DLY_MAX		100
 #define	MH$K_SOL_DLY_MAX	25		/* SOLICIT_SRV to our VERF: 0 ... 0.5 s		*/
 #define	MH$K_SOL_QUIET		(60 * MH$K_TICKS_SEC)	/* A SOLICIT_SRV after this long is a new boot	*/
+#define	MH$K_HOLD_HELLO		(30 * MH$K_TICKS_SEC)	/* Loader to SOLICIT_SRV: our HELLO held at most	*/
 #define	MH$K_BOOT_LSTN_TMO	(30 * MH$K_TICKS_SEC)	/* ... of a boot driver: SYSBOOT> can be quiet	*/
 #define	MH$K_PPD_START_TMO	(1 * MH$K_TICKS_SEC)	/* Our START again until the STACK comes	*/
 
@@ -383,6 +385,12 @@ typedef struct mh_mopsat_t {
 	uint64_t	bbegun, bheard;		/* Ticks of its first and its last TFTP, 0 - none	*/
 	uint32_t	bfiles, bmiss;
 	uint64_t	boctets;
+
+	/*
+	**  From the end of its secondary loader (IPB.EXE by TFTP, APB.EXE by
+	**  MOP) to its first SOLICIT_SRV the HELLO of the server is held (MHCC)
+	*/
+	uint64_t	holdhello;		/* Tick the hold ends, 0 - none			*/
 } MH$MOPSAT;
 
 /*

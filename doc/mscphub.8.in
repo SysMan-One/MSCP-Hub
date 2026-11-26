@@ -26,9 +26,10 @@
 .\"		24-NOV-2026	CLD	X.01-25 : BOOTP and TFTP of an I64 satellite: IP=,
 .\"					/IPADDRESS, /GATEWAY.
 .\"		25-NOV-2026	RRL	X.01-25ECO02 : a satellite gets its system disk first.
+.\"		26-NOV-2026	RRL	X.01-25ECO03 : no HELLO while a satellite starts its boot driver.
 .\"
 .\"---
-.TH MSCPHUB 8 "25 November 2026" "MSCPHUB @MH_IDENT@" "System Administration"
+.TH MSCPHUB 8 "26 November 2026" "MSCPHUB @MH_IDENT@" "System Administration"
 .SH NAME
 mscphub \- MSCP disk server for OpenVMS nodes, over NISCA
 .SH SYNOPSIS
@@ -326,8 +327,14 @@ server CAP_NET_ADMIN; RCVBUF says when it got less.
 The server can serve the system disk of a diskless satellite: an OpenVMS
 node of the cluster, or the server itself (MOP for an Alpha, BOOTP and TFTP
 for an I64), loads the satellite, and the server answers its loader
-(SOLICIT).  The satellite needs a cluster with quorum, and all the users of
-one system disk must be members of one cluster.
+(SOLICIT).  From the end of the loader of a satellite of
+.B /SATELLITEn
+to its first question, 30 seconds at most, the server sends no HELLO to the
+group: one that comes just before the question makes the boot driver drop
+the answer.  Meanwhile each open channel gets a VERF at the time of the
+HELLO, as PEDRIVER sends to measure a delay.  The satellite needs a cluster
+with quorum, and all the users of one system disk must be members of one
+cluster.
 .PP
 OpenVMS, VMScluster, Alpha, DEC and HSC are trademarks of Hewlett Packard
 Enterprise Development LP or of VMS Software, Inc.; Linux is the registered

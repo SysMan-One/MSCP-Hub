@@ -1300,7 +1300,10 @@ Explanation: The loader of a satellite looks for the server of its
 system disk. The outcome is "served" (the disk is one of this server,
 which answers), "not served here" (another server may serve it), or
 "not served: the unit is read only" (a system disk must be writable).
-The message comes once for a boot of a node.
+The message comes once for a boot of a node. From the end of the loader
+of a satellite of /SATELLITEn to this message, 30 seconds at most, the
+server sends no HELLO to the group (a HELLO just before the question made
+the boot driver drop the answer and ask again for ever).
 
 User Action: None when the disk is served. When this server should
 serve it, compare the name with the names in UNITCFG: the allocation

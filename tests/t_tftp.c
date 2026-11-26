@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_TFTP"
-#define	__IDENT__	"X.01-25"
-#define	__REV__		"1.25.0"
+#define	__IDENT__	"X.01-25ECO03"
+#define	__REV__		"1.25.3"
 
 /*
 **++
@@ -31,6 +31,7 @@
 **  MODIFICATION HISTORY:
 **
 **		24-NOV-2026	CLD	X.01-25 : Initial revision.
+**		26-NOV-2026	RRL	X.01-25ECO03 : IPB.EXE holds the HELLO of the server.
 **
 **--
 */
@@ -566,6 +567,9 @@ unsigned	l_off = 0;
 	l_b[3] = 0x8D;
 	memcpy(l_b + 4, "XYZ", 3);
 
+	s_t$file(l_d, &l_off, "IPB.EXE", 48, 1170, 1, 512, 1, 0, 0, 0xEE00, 0);
+	memset($BLK(1170), 0x1B, 512);
+
 	s_t$file(l_d, &l_off, "WRAP.EXE", 47, T$K_WRAPLBN, (T$K_WRAPN * T$K_WRAPBLK + 511) / 512, T$K_WRAPN * T$K_WRAPBLK, 1, 0, 0,
 		0xEE00, 0);
 	for ( unsigned i = 0; i < T$K_WRAPN * T$K_WRAPBLK; i++ )
@@ -811,6 +815,17 @@ int		l_fd, l_ok;
 	$CHECK(l_ok && (l_len == 3 * 512 + 100) && (l_blocks == 4) && !memcmp(s_out, $BLK(1100), l_len),
 		"RRQ of BIG.EXE: 4 blocks of 512, the last of 100, the octets of the file");
 	$CHECK((l_sat->tfiles == 1) && (l_sat->toctets == 1636) && !l_port->xfer[0].busy, "... counted, the transfer over");
+	$CHECK(!l_sat->holdhello, "... not the loader: the HELLO of the server is not held");
+
+	/*
+	**  IPB.EXE, the last file of the loader: the HELLO of the server held
+	**  30 s, till the SOLICIT_SRV of the satellite
+	*/
+	l_ok = s_t$get(l_port, "$44$DKA100:[SYS10.SYSEXE]IPB.EXE", NULL, s_out, sizeof(s_out), &l_len, NULL, &l_blocks);
+	$CHECK(l_ok && (l_len == 512) && (l_sat->holdhello == l_port->tick + MH$K_HOLD_HELLO), "RRQ of IPB.EXE: the HELLO of the server held 30 s");
+	l_sat->holdhello = 0;
+	l_sat->tfiles--;
+	l_sat->toctets -= 512;
 
 	/*
 	**  ... tsize and blksize 1024: the OACK, then 2 blocks

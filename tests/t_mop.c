@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_MOP"
-#define	__IDENT__	"X.01-25"
-#define	__REV__		"1.25.0"
+#define	__IDENT__	"X.01-25ECO03"
+#define	__REV__		"1.25.3"
 
 /*
 **++
@@ -29,6 +29,7 @@
 **
 **		25-OCT-2026	RRL	X01-22 : Initial revision.
 **		24-NOV-2026	CLD	X.01-25 : /PASSIVE answers no console.
+**		26-NOV-2026	RRL	X.01-25ECO03 : the end of a load holds the HELLO of the server.
 **
 **--
 */
@@ -598,6 +599,7 @@ unsigned	l_elen;
 	s_ntx = 0;
 	s_t$reqmem(l_port, MH$K_MOP_V4, 4);
 	$CHECK(!s_ntx && (l_sat->state == MH$K_MOP_IDLE) && (l_sat->loads == 1) && !l_sat->img, "REQUEST MEMORY LOAD 4: loaded, nothing sent");
+	$CHECK(l_sat->holdhello == l_port->tick + MH$K_HOLD_HELLO, "... APB runs: the HELLO of the server held 30 s, till its SOLICIT_SRV");
 
 	/*
 	**  V3, straight to us (a console that knows us): the load from 0 in

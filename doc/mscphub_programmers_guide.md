@@ -303,6 +303,16 @@ is marked `boot`: it is kept 30 seconds without a word instead of 8, and when it
 starts the path itself. The CCSTART of the runtime PEDRIVER of the satellite restarts the channel as
 an ordinary one. `SOLICIT` tells the operator once a boot.
 
+A HELLO of the server that comes to a satellite between the moment its boot driver has the adapter
+and its first SOLICIT_SRV (some 20 ms) makes the boot driver a channel to the server that drops the
+VERF; that channel opens later by its own CCSTART, the boot driver goes on asking, each SOLICIT_SRV
+on the open channel restarts it (CC.A42, as PEDRIVER), and the satellite never gets its disk
+(IA64Emu 48-38, about 1 boot in 100). So the end of the loader - IPB.EXE by TFTP (`s_mh$tftp_end`),
+the last message of a MOP load - sets `holdhello` of the satellite 30 seconds ahead, its first
+SOLICIT_SRV clears it, and while one is set `mh$cc_tick` sends no HELLO but a VERF to each open
+channel: the delay probe of PEDRIVER (CC.A84), answered by VACK, keeps the listen timers of the
+other nodes going.
+
 An entry of the table is an adapter of a node, and the channel to it. A node of two adapters on the
 LAN of the server - a satellite of a DE500 and an 82540EM - has two entries of the same system ID and
 name: the first one seen is the owner (`$MHOWNER`), and the circuit, the connections and the units

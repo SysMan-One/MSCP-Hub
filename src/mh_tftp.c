@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHTFTP"
-#define	__IDENT__	"X.01-25"
-#define	__REV__		"1.25.0"
+#define	__IDENT__	"X.01-25ECO01"
+#define	__REV__		"1.25.1"
 
 /*
 **++
@@ -60,6 +60,8 @@
 **  MODIFICATION HISTORY:
 **
 **		24-NOV-2026	CLD	X.01-25 : Initial version.
+**		26-NOV-2026	RRL	X.01-25ECO01 : the end of IPB.EXE holds the HELLO of the server
+**					till the SOLICIT_SRV of the satellite (MHCC).
 **
 **--
 */
@@ -1265,6 +1267,15 @@ MH$MOPSAT	*l_sat = &a_port->sats[a_x->sat];
 
 	if ( a_done )
 		{
+		size_t	l_fl = strlen(a_x->file);
+
+		/*
+		**  IPB.EXE is the last file of the loader: the boot driver comes
+		**  next, and its SOLICIT_SRV
+		*/
+		if ( (l_fl >= 7) && !strcasecmp(a_x->file + l_fl - 7, "IPB.EXE") )
+			l_sat->holdhello = a_port->tick + MH$K_HOLD_HELLO;
+
 		l_sat->tfiles++;
 		l_sat->toctets	+= a_x->len;
 		l_sat->bfiles++;

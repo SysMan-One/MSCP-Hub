@@ -1,6 +1,6 @@
 #define	__MODULE__	"T_BOOT"
-#define	__IDENT__	"X01-21"
-#define	__REV__		"1.21.0"
+#define	__IDENT__	"X.01-25ECO03"
+#define	__REV__		"1.25.3"
 
 /*
 **++
@@ -15,7 +15,8 @@
 **		the satellite SAT1 (1031) sends - SOLICIT_SRV, VACK, STACK,
 **		the SCS connection to MSCP$DISK and the first MSCP commands -
 **		then the runtime PEDRIVER of SAT1 takes the channel over by
-**		CCSTART, and SAT1 boots again.
+**		CCSTART, and SAT1 boots again; the HELLO of the server is held
+**		from the end of the loader of SAT1 to its SOLICIT_SRV.
 **
 **		The frames of the boot driver are made here as it builds them:
 **		CC V1.3 with SERVICE, TR V1.3 (9 octets, 16-bit numbers).
@@ -27,6 +28,8 @@
 **  MODIFICATION HISTORY:
 **
 **		25-OCT-2026	RRL	X01-21 : Initial revision.
+**		26-NOV-2026	RRL	X.01-25ECO03 : the HELLO held between the loader of SAT1 and its
+**					SOLICIT_SRV (IA64Emu 48-38).
 **
 **--
 */
@@ -65,6 +68,7 @@ static	int		s_fails, s_checks;
 #define	T$K_SAT_CONID	0x00010001U		/* The SRC_CONID of its CON_REQ template	*/
 
 static	const uint8_t	s_satmac [NISCA$K_SZ_MAC] = { 0x08, 0x00, 0x2B, 0xE5, 0x43, 0x01 };
+static	const uint8_t	s_othmac [NISCA$K_SZ_MAC] = { 0x08, 0x00, 0x2B, 0xE5, 0x43, 0x02 };	/* Another satellite	*/
 static	const uint8_t	s_hubmac [NISCA$K_SZ_MAC] = { 0x08, 0x00, 0x2B, 0xE5, 0x40, 0x02 };
 static	const char	s_auth [] = "5A3C9E1700000000";
 
@@ -879,6 +883,47 @@ int		l_fd;
 	$CHECK(l_node->state == MH$K_CH_CCSTART_SENT, "HELLO, 2 s: CCSTART_SENT");
 	s_t$cc(l_port, NISCA$K_CC_SOLICIT_SRV, "_$42$DKA100:", 0, 1);
 	$CHECK((l_node->state == MH$K_CH_SOLICIT_DLY) && l_node->boot, "SOLICIT_SRV in CCSTART_SENT: SOLICIT_DLY");
+
+	/*
+	**  The loader of SAT1 is in (IA64Emu 48-38): no HELLO of ours till its
+	**  SOLICIT_SRV - a VERF to each open channel at the HELLO time instead;
+	**  the SOLICIT_SRV ends the hold, and 30 s do at the latest
+	*/
+	s_t$run(l_port, MH$K_SOL_DLY_MAX + 1);
+	s_t$cc(l_port, NISCA$K_CC_VACK, NULL, 1, 1);
+	$CHECK(l_node->state == MH$K_CH_OPEN, "VERF, VACK: OPEN");
+
+	l_port->nsat = 2;
+	memcpy(l_port->sats[0].mac, s_satmac, NISCA$K_SZ_MAC);
+	memcpy(l_port->sats[1].mac, s_othmac, NISCA$K_SZ_MAC);
+	l_port->sats[1].holdhello = l_port->tick + MH$K_HOLD_HELLO;
+	l_port->next_hello = l_port->tick + 1;
+	s_ntx = 0;
+	s_t$run(l_port, 2);
+	$CHECK((s_ntx == 1) && s_t$iscc(l_port, 0, NISCA$K_CC_VERF), "the loader of another satellite is in: at the HELLO time a VERF to the open channel of SAT1, no HELLO");
+
+	l_port->sats[1].holdhello = 0;
+	l_port->sats[0].holdhello = l_port->tick + MH$K_HOLD_HELLO;
+	l_port->next_hello = l_port->tick + 1;
+	s_ntx = 0;
+	s_t$run(l_port, 2);
+	$CHECK(!s_ntx, "the loader of SAT1 is in: neither a HELLO nor a VERF to its own old channel");
+
+	s_t$cc(l_port, NISCA$K_CC_SOLICIT_SRV, "_$42$DKA100:", 0, 1);
+	$CHECK(!l_port->sats[0].holdhello, "... its SOLICIT_SRV ends the hold");
+	l_port->next_hello = l_port->tick + 1;
+	s_ntx = 0;
+	s_t$run(l_port, 2);
+	$CHECK((s_ntx == 1) && !memcmp(s_tx[0], l_port->gmac, NISCA$K_SZ_MAC)
+		&& ((s_tx[0][T$K_CC + NISCA$K_CC_MSG] & NISCA$M_CC_TYPE) == NISCA$K_CC_HELLO), "... then the HELLO to the group again");
+
+	l_port->sats[0].holdhello = l_port->tick + 2;
+	l_port->next_hello = l_port->tick + 5;
+	s_ntx = 0;
+	s_t$run(l_port, 6);
+	$CHECK((s_ntx >= 1) && !memcmp(s_tx[s_ntx - 1], l_port->gmac, NISCA$K_SZ_MAC) && !l_port->sats[0].holdhello,
+		"a hold that has run out: the HELLO to the group");
+	l_port->nsat = 0;
 
 	/*
 	**  /PASSIVE: never an answer

@@ -1,6 +1,6 @@
 #define	__MODULE__	"MSCPHUB"
-#define	__IDENT__	"X.01-25ECO02"
-#define	__REV__		"1.25.2"
+#define	__IDENT__	"X.01-25ECO03"
+#define	__REV__		"1.25.3"
 
 /*
 **++
@@ -95,6 +95,10 @@
 **					first in the walk of its units (MHMSCP X01-22): an SMP
 **					satellite crashed MSCPCLASS when its boot device was not
 **					the first unit of the server.
+**		26-NOV-2026	RRL	X.01-25ECO03 : no HELLO between the loader of a satellite and
+**					its first SOLICIT_SRV (MHCC X.01-25ECO02, MHTFTP and MHMOP
+**					X.01-25ECO01): one that came just before the SOLICIT_SRV made
+**					the boot driver drop our VERF and ask again for ever.
 **
 **--
 */

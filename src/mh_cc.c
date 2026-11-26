@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHCC"
-#define	__IDENT__	"X.01-25ECO01"
-#define	__REV__		"1.25.1"
+#define	__IDENT__	"X.01-25ECO02"
+#define	__REV__		"1.25.2"
 
 /*
 **++
@@ -55,6 +55,18 @@
 **		before the VERF is shorter than the 0 - 2 s of PEDRIVER: the
 **		boot driver takes the first VERF and drops the others.
 **
+**		A HELLO of ours that comes to a satellite between the moment
+**		its boot driver has the adapter and its first SOLICIT_SRV
+**		(some 20 ms) makes the boot driver a channel to us that drops
+**		our VERF: the channel opens later by the CCSTART of that
+**		channel, the boot driver goes on asking, every SOLICIT_SRV on
+**		the open channel restarts it, and the satellite never gets its
+**		disk.  So from the end of the loader of a satellite of ours
+**		(IPB.EXE by TFTP, APB.EXE by MOP) to its first SOLICIT_SRV, 30 s
+**		at most, the server sends no HELLO; each open channel gets a
+**		VERF at the time of the HELLO instead - the delay probe of
+**		PEDRIVER (CC.A84), which keeps its listen timer going.
+**
 **		Every message but HELLO must carry the AUTHORIZE bit and the
 **		password hash of the group; one that does not is counted and
 **		does not move the channel (PEDRIVER: events BAD_ECO and
@@ -81,6 +93,9 @@
 **						closes the other channels of the node.
 **		24-NOV-2026	RRL	X.01-25ECO01 : a malformed /AUTHORIZE: its value, the password
 **						hash of the cluster, is not shown in the message.
+**		26-NOV-2026	RRL	X.01-25ECO02 : no HELLO of ours between the loader of a
+**						satellite and its first SOLICIT_SRV; the open channels
+**						get a VERF meanwhile.
 **
 **--
 */
@@ -157,6 +172,7 @@ static	const char *	s_why [MH$K_CE_NEVENT] = {
 static	unsigned	s_seed;			/* RAND_R state: the jitter of HELLO and CCSTART	*/
 
 static	int	s_mh$cc_namelen	(const MH$PORT *a_port);
+static	int	s_mh$cc_held	(MH$PORT *a_port, MH$NODE *a_ch);
 static	int	s_mh$ch_close	(MH$PORT *a_port, MH$NODE *a_node, const char *a_why);
 static	int	s_mh$ch_event	(MH$PORT *a_port, MH$NODE *a_node, unsigned a_event, const uint8_t *a_cc, unsigned a_cclen);
 
@@ -730,6 +746,42 @@ unsigned	l_action;
 **++
 **  FUNCTIONAL DESCRIPTION:
 **
+**	Is a channel one of a satellite of ours whose HELLO is held - by the
+**	adapter of the channel or the one of the owner of its node?
+**
+**  FORMAL PARAMETERS:
+**
+**	a_port		The port context
+**	a_ch		The channel
+**
+**  RETURN VALUE:
+**	1 - yes, 0 - no.
+**--
+*/
+static	int	s_mh$cc_held	(
+		MH$PORT *	a_port,
+		MH$NODE *	a_ch
+			)
+{
+	for ( unsigned i = 0; i < a_port->nsat; i++ )
+		{
+		if ( !a_port->sats[i].holdhello || (a_port->tick >= a_port->sats[i].holdhello) )
+			continue;
+
+		if ( !memcmp(a_port->sats[i].mac, a_ch->mac, NISCA$K_SZ_MAC)
+			|| !memcmp(a_port->sats[i].mac, $MHOWNER(a_ch)->mac, NISCA$K_SZ_MAC) )
+			return	1;
+		}
+
+	return	0;
+}
+
+
+
+/*
+**++
+**  FUNCTIONAL DESCRIPTION:
+**
 **	The 20 ms clock of the CC layer: the end of the listen period, the
 **	HELLO, the timers of the channels.
 **
@@ -802,6 +854,43 @@ char	l_name [NISCA$K_SZ_NODENAME + 1];
 		}
 
 	a_port->next_hello = a_port->tick + MH$K_HELLO_MIN + (uint64_t) (rand_r(&s_seed) % (MH$K_HELLO_MAX - MH$K_HELLO_MIN + 1));
+
+	/*
+	**  A satellite of ours between its loader and its first SOLICIT_SRV:
+	**  no HELLO, a VERF to each open channel instead - but to none of that
+	**  satellite, an old channel of a boot just ended (PEDRIVER: VERF in
+	**  OPEN, CC.A84, a VACK; the boot driver: CC.A71, a VACK, the channel
+	**  open; either restarts its listen timer)
+	*/
+	for ( unsigned i = 0; i < a_port->nsat; i++ )
+		{
+		if ( !a_port->sats[i].holdhello )
+			continue;
+
+		if ( a_port->tick >= a_port->sats[i].holdhello )
+			{
+			a_port->sats[i].holdhello = 0;
+			continue;
+			}
+
+		if ( a_port->trace )
+			$LOG_FAO(STS$K_INFO, "HELLO held: !AZ is between its loader and its SOLICIT_SRV", a_port->sats[i].name);
+
+		for ( unsigned k = 0; k < a_port->nnode; k++ )
+			{
+			MH$NODE	*l_ch = &a_port->nodes[k];
+
+			if ( l_ch->state != MH$K_CH_OPEN )
+				continue;
+
+			if ( s_mh$cc_held(a_port, l_ch) )
+				continue;
+
+			(void) s_mh$ch_send(a_port, l_ch, NISCA$K_CC_VERF);
+			}
+
+		return	STS$K_SUCCESS;
+		}
 
 	return	s_mh$cc_mcast(a_port, NISCA$K_CC_HELLO);
 }
@@ -1275,6 +1364,11 @@ int		l_status, l_served;
 		}
 
 	a_node->sollast = a_port->tick;
+
+	for ( unsigned i = 0; i < a_port->nsat; i++ )		/* It asks: our HELLO is not held for it any longer */
+		if ( !memcmp(a_port->sats[i].mac, a_node->mac, NISCA$K_SZ_MAC)
+			|| !memcmp(a_port->sats[i].mac, $MHOWNER(a_node)->mac, NISCA$K_SZ_MAC) )
+			a_port->sats[i].holdhello = 0;
 
 	if ( l_served < 0 )
 		return	STS$K_SUCCESS;

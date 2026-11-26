@@ -1,6 +1,6 @@
 #define	__MODULE__	"MHMOP"
-#define	__IDENT__	"X.01-25"
-#define	__REV__		"1.25.0"
+#define	__IDENT__	"X.01-25ECO01"
+#define	__REV__		"1.25.1"
 
 /*
 **++
@@ -61,6 +61,8 @@
 **		24-NOV-2026	CLD	X.01-25 : IP= of /SATELLITEn: an I64 satellite, loaded by
 **					MHTFTP; MOP does not answer it.  /PASSIVE answers no
 **					console either (it sends nothing at all).
+**		26-NOV-2026	RRL	X.01-25ECO01 : the end of a load holds the HELLO of the server
+**					till the SOLICIT_SRV of the satellite (MHCC).
 **
 **--
 */
@@ -1036,6 +1038,7 @@ uint64_t	l_ms;
 			**  The transfer address is taken: the bootstrap runs
 			*/
 			a_sat->loads++;
+			a_sat->holdhello = a_port->tick + MH$K_HOLD_HELLO;	/* APB runs: its SOLICIT_SRV comes next */
 			l_ms = (a_port->tick - a_sat->begun) * MH$K_TICK_MS;
 			mh$mac2str(a_sat->mac, l_mac, sizeof(l_mac));
 			$MHMSG(MH$_MOPLOAD, l_mac, a_sat->name, a_sat->imglen, a_sat->nmsg, a_sat->nrexmt, (unsigned) l_ms);
